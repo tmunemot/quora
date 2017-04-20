@@ -6,6 +6,7 @@ import re
 from string import punctuation
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
+from nltk.corpus import stopwords
 
 GLOVE_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "pre")
 MAX_SEQUENCE_LENGTH = 32
@@ -58,7 +59,7 @@ def load_weights(filepath, tk, max_num_words=MAX_NUM_WORDS, embedding_dim=EMBEDD
 
 
 	
-def text_to_wordlist(text, remove_stop_words=False, stem_words=False):
+def text_to_wordlist(text, remove_stop_words=True, stem_words=False):
 	# Clean the text, with the option to remove stop_words and to stem words.
 
 	# Clean the text
@@ -124,10 +125,10 @@ def text_to_wordlist(text, remove_stop_words=False, stem_words=False):
 	# Optionally, remove stop words
 	if remove_stop_words:
 		text = text.split()
-		stop_words = ['the','a','an','and','but','if','or','because','as','what','which','this','that','these','those','then',
-				'just','so','than','such','both','through','about','for','is','of','while','during','to','What','Which',
-				'Is','If','While','This']				
-		text = [w for w in text if not w in stop_words]
+		#stop_words = ['the','a','an','and','but','if','or','because','as','what','which','this','that','these','those','then',
+		#		'just','so','than','such','both','through','about','for','is','of','while','during','to','What','Which',
+		#		'Is','If','While','This']				
+		text = [w for w in text if not w in stopwords.words('english')]
 		text = " ".join(text)
 
 	# Optionally, shorten words to their stems
