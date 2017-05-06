@@ -6,7 +6,7 @@ import re
 from string import punctuation
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
-from nltk.corpus import stopwords
+#from nltk.corpus import stopwords
 
 GLOVE_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "pre")
 MAX_SEQUENCE_LENGTH = 32
@@ -19,9 +19,21 @@ def preprocess_texts(df):
 	df = revert_abbreviations(df)	
 	df["question1"] = df["question1"].apply(text_to_wordlist)
 	df["question2"] = df["question2"].apply(text_to_wordlist)
+	#df["question1"] = df["question1"].str.lower()
+	#df["question2"] = df["question2"].str.lower()
+	#df["question1"] = df["question1"].str.split(' ')
+	#df["question2"] = df["question2"].str.split(' ')	
 	return df
 	#val_acc: 0.7833 - val__logloss: 0.465
 	#val_acc: 0.7940 - val__logloss: 0.456
+	
+def preprocess_texts_w2v(df):
+	df.question1.fillna("", inplace=True)
+	df.question2.fillna("", inplace=True)
+	df = revert_abbreviations(df)
+	df["question1"] = df["question1"].apply(text_to_wordlist)
+	df["question2"] = df["question2"].apply(text_to_wordlist)
+	return df
 
 def fit_tokenizer(df, max_num_words=MAX_NUM_WORDS):
 	q_all = np.concatenate([df.question1.values, df.question2.values])
@@ -41,6 +53,7 @@ def load_weights(filepath, tk, max_num_words=MAX_NUM_WORDS, embedding_dim=EMBEDD
 	word_index = tk.word_index
 	embeddings_index={}
 	with open(filepath, encoding="utf8") as f:
+	#with open(filepath) as f:	
 		for line in f.readlines():
 			values = line.split()
 			word = values[0]
@@ -56,10 +69,8 @@ def load_weights(filepath, tk, max_num_words=MAX_NUM_WORDS, embedding_dim=EMBEDD
 		if vec is not None:
 			weights[i] = vec
 	return weights, num_words
-
-
 	
-def text_to_wordlist(text, remove_stop_words=True, stem_words=False):
+def text_to_wordlist(text, remove_stop_words=False, stem_words=False):
 	# Clean the text, with the option to remove stop_words and to stem words.
 
 	# Clean the text
@@ -125,10 +136,11 @@ def text_to_wordlist(text, remove_stop_words=True, stem_words=False):
 	# Optionally, remove stop words
 	if remove_stop_words:
 		text = text.split()
-		#stop_words = ['the','a','an','and','but','if','or','because','as','what','which','this','that','these','those','then',
-		#		'just','so','than','such','both','through','about','for','is','of','while','during','to','What','Which',
-		#		'Is','If','While','This']				
-		text = [w for w in text if not w in stopwords.words('english')]
+		stop_words = ['the','a','an','and','but','if','or','because','as','what','which','this','that','these','those','then',
+				'just','so','than','such','both','through','about','for','is','of','while','during','to','What','Which',
+				'Is','If','While','This']				
+		#text = [w for w in text if not w in stopwords.words('english')]
+		text = [w for w in text if not w in stop_words]		
 		text = " ".join(text)
 
 	# Optionally, shorten words to their stems
