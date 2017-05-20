@@ -1,3 +1,4 @@
+#!/usr/bin/python
 # -*- coding: utf-8 -*-
 import sys
 import os
@@ -11,24 +12,18 @@ import nltk
 import phonenumbers
 
 import utils
-
-from string import punctuation
-from nltk.tag.stanford import StanfordNERTagger
-
 from multiprocessing import Process, Pool
 from multiprocessing.managers import BaseManager
 
 class SharedResource(object):
-	NER_HOME="../d/stanford-ner-2016-10-31"
-	NER_CLF = os.path.join(NER_HOME, "classifiers/english.all.3class.distsim.crf.ser.gz")
-	NER_JAR = os.path.join(NER_HOME, "stanford-ner.jar")	
+
 	def __init__(self):
-		print "initialize NERTagger"
-		self.NERTagger = StanfordNERTagger(SharedResource.NER_CLF, SharedResource.NER_JAR)
-	
+		print "initialize word2vec"		
+		self.word2vec = gensim.models.KeyedVectors.load_word2vec_format("../d/GoogleNews-vectors-negative300.bin", binary=True)
+		self.word2vec_vocab = set(self.word2vec.vocab.keys())		
 	def get(self, fname):
-		if fname == "NERTagger":
-			return self.NERTagger	
+		if fname == "word2vec_vocab":
+			return self.word2vec_vocab	
 		raise Exception("{0} is not defined".format(fname))
 
 class ResourceManager(BaseManager):
@@ -38,6 +33,69 @@ ResourceManager.register("SharedResource", SharedResource)
 def aggregate(ret):
 	aggregate.out.append(ret)
 aggregate.out = []
+
+def prep(text, vocabs):
+	text = text.decode("utf-8")
+	text = re.sub("’", "'", text)
+	text = re.sub("`", "'", text)
+	text = re.sub("“", '"', text)
+	text = re.sub("？", "?", text)
+	text = re.sub("…", " ", text)
+	text = re.sub("é", "e", text)
+	text = re.sub(r"\.+", ".", text)
+	text = text.replace("[math]", " ")
+	text = text.replace("[/math]", " ")
+    
+	if prep.dict is None:
+		prep.dict = pd.read_csv("../d/replace.csv").set_index("src")["dst"].to_dict()
+		for k in prep.dict.keys():
+			prep.dict[k.lower()] = prep.dict[k]
+	for k in prep.dict.keys():
+		if k in text:
+			text = text.replace(k, prep.dict[k])
+	if prep.units is None:
+		with open("../d/units.csv", "rU") as f:
+			prep.units = [l.replace('\n','') for l in f]
+
+	for u in prep.units:
+		text = re.sub(r"(\d+\.\d+){0}".format(u),"\\1 {0}".format(u), text)
+    
+	matches = re.finditer(r"([a-zA-z]*)\.([a-zA-z]*)", text)
+	for match in matches:
+		m01 = match.group(0)
+		m0 = match.group(1)
+		m1 = match.group(2)
+		if m01 not in vocabs and m1 in vocabs \
+							and m1.lower() not in ("com", "org","net","exe", "js", "biz", "care", "ly", "io", "in", "jp", "au", "gov", "ca", "cn", "fr", "hk", "kr", "mx") \
+							and (m1.lower() in ("i","a") or len(m1) > 1) \
+							and m1[-1] != ".":
+			text = text.replace(m01, m01.replace(".", ". "))
+	matches = re.finditer(r"([a-zA-z]*)?([a-zA-z]*)", text)
+	for match in matches:
+		m01 = match.group(0)
+		m0 = match.group(1)
+		m1 = match.group(2)
+		if m01 not in vocabs and m0 in vocabs \
+							and m1 in vocabs \
+							and (m1.lower() in ("i","a") or len(m1) > 1):
+			text = text.replace(m01, m01.replace(".", ". "))
+	text = re.sub(r"/", " or ", text)
+	text = text.encode("ascii","ignore")
+	return text
+prep.dict = None
+prep.units = None
+
+def post(tokens):
+	out = []
+	for t in tokens:
+		if t[-1] == ".":
+			out.append(t[:-1])
+		else:
+			out.append(t)
+	return out
+
+def tokenize_wrapper(text):
+	return post(nltk.word_tokenize(text))
 
 def base(df, nprocs=12):
 	t = time.time()
@@ -61,41 +119,24 @@ def base(df, nprocs=12):
 	return df_out
 
 def base_worker(shared_obj, df, iproc):
-#	try:
 	# apply very basic preprocessing
-	df.fillna(value="", inplace=True)
-	df["question1"] = df["question1"].apply(replace_char)
-	df["question2"] = df["question2"].apply(replace_char)
+	try:
+		df.fillna(value="", inplace=True)
+		vocab = shared_obj.get("word2vec_vocab")
+		df["q1"] = df["question1"].apply(prep, args=(vocab,))
+		df["q2"] = df["question2"].apply(prep, args=(vocab,))
+	
+		# tokenize
+		df["q1_tokens"] = df["q1"].apply(tokenize_wrapper)
+		df["q2_tokens"] = df["q2"].apply(tokenize_wrapper)	
 
-	# extract named entity
-	ner_tagger = shared_obj.get("NERTagger")		
-	df["q1_ne"] = df["question1"].apply(apply_ner, args=(ner_tagger,))
-	df["q2_ne"] = df["question2"].apply(apply_ner, args=(ner_tagger,))	
-
-	# add phone numbers if exists
-	df["q1_phone_us"] = df["question1"].apply(extract_phone)
-	df["q2_phone_us"] = df["question2"].apply(extract_phone)
-#	except:
-#		traceback.print_exc()
-#		raise Exception("base_worker failed")
+		# add phone numbers if exists
+		df["q1_phone_us"] = df["q1"].apply(extract_phone)
+		df["q2_phone_us"] = df["q2"].apply(extract_phone)
+	except:
+		traceback.print_exc()
+		raise Exception("Exception")
 	return iproc, df
-
-def expand(text):
-    """ convert to lowercases, expand contracted english words, remove punctuations
-    """
-    if expand.pattern is None:
-        expand.dict = pd.read_csv("./contractions_word2vec.csv").set_index("contracted")["original"].to_dict()
-        expand.pattern = re.compile(r"\b(" + "|".join(expand.dict.keys()) + r")\b")
-    text = expand.pattern.sub(lambda x: expand.dict[x.group()], text)
-    return re.sub(r"[^\w\s]"," ", text)
-expand.dict=None
-expand.pattern=None
-
-def replace_char(text):
-	# replace letters
-	text = text.replace("′","'")
-	text = text.replace("″","\"")
-	return text
 
 def extract_phone(text):
 	# assume there is only one us number in one question
@@ -106,10 +147,3 @@ def extract_phone(text):
 		pass
 	return ""
 
-def apply_ner(text, ner_tagger):
-	try:
-		return ner_tagger.tag(text.split())
-	except:
-		traceback.print_exc()
-		pass
-	return []
