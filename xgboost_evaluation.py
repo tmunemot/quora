@@ -1,5 +1,5 @@
 #!/usr/bin/python
-""" a script to train a classifier with given data """
+""" evaluate xgboost algorithm for Quora question pairs challenge """
 import sys
 import os
 import argparse
@@ -28,6 +28,7 @@ XGB_PARAMS={
 def parse_args(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     add_evaluate_base_args(parser)
+    # TODO: add an option for xgboost hyperparameters
     return parser.parse_args(argv)
 
 
@@ -36,7 +37,6 @@ def add_evaluate_base_args(parser):
     parser.add_argument("val", help="validation data")
     parser.add_argument("dev", help="development data used during training")
     parser.add_argument("outdir", help="output directory")
-    # TODO: add an option for hyperparameters
 
 
 def mkdir_p(path):
