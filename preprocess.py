@@ -1,5 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+""" functions for preprocessing question texts in parallel
+"""
 import sys
 import os
 import re
@@ -15,11 +17,19 @@ import utils
 from multiprocessing import Process, Pool
 from multiprocessing.managers import BaseManager
 
-class SharedResource(object):
 
+WORD2VEC_BINARY_FILE="./resource/GoogleNews-vectors-negative300.bin"
+PREPROCESS_GENERAL="./resource/replace.csv"
+PREPROCESS_UNITS="./resource/units.csv"
+
+
+class SharedResource(object):
+    """
+        hold a word2vec model and used to parallel process texts
+    """
 	def __init__(self):
-		print "initialize word2vec"		
-		self.word2vec = gensim.models.KeyedVectors.load_word2vec_format("../d/GoogleNews-vectors-negative300.bin", binary=True)
+		print "initialize word2vec"
+		self.word2vec = gensim.models.KeyedVectors.load_word2vec_format(WORD2VEC_BINARY_FILE, binary=True)
 		self.word2vec_vocab = set(self.word2vec.vocab.keys())		
 	def get(self, fname):
 		if fname == "word2vec_vocab":
@@ -30,11 +40,29 @@ class ResourceManager(BaseManager):
 	pass
 ResourceManager.register("SharedResource", SharedResource)
 
+
 def aggregate(ret):
+    """
+        append dataframe objects that are processed in parallel
+        
+        Args:
+        ret: a dataframe object returned by a process
+    """
 	aggregate.out.append(ret)
 aggregate.out = []
 
+
 def prep(text, vocabs):
+    """
+        substitute special characters, replace abbreviations, and encode to ascii
+        
+        Args:
+        text: a question
+        vocabs: a list of vocabulary available in a pretrained word2vec model
+        
+        Returns:
+        preprocessed text
+    """
 	text = text.decode("utf-8")
 	text = re.sub("’", "'", text)
 	text = re.sub("`", "'", text)
@@ -47,14 +75,14 @@ def prep(text, vocabs):
 	text = text.replace("[/math]", " ")
     
 	if prep.dict is None:
-		prep.dict = pd.read_csv("../d/replace.csv").set_index("src")["dst"].to_dict()
+		prep.dict = pd.read_csv(PREPROCESS_GENERAL).set_index("src")["dst"].to_dict()
 		for k in prep.dict.keys():
 			prep.dict[k.lower()] = prep.dict[k]
 	for k in prep.dict.keys():
 		if k in text:
 			text = text.replace(k, prep.dict[k])
 	if prep.units is None:
-		with open("../d/units.csv", "rU") as f:
+		with open(PREPROCESS_UNITS, "rU") as f:
 			prep.units = [l.replace('\n','') for l in f]
 
 	for u in prep.units:
@@ -85,19 +113,51 @@ def prep(text, vocabs):
 prep.dict = None
 prep.units = None
 
+
 def post(tokens):
-	out = []
-	for t in tokens:
-		if t[-1] == ".":
-			out.append(t[:-1])
-		else:
-			out.append(t)
-	return out
+    """
+        post-process output from NLTK tokenizer
+        
+        Args:
+        tokens: a list contains a tokenized text
+        
+        Returns:
+        processed tokens
+    """
+    out = []
+        for t in tokens:
+            if t[-1] == ".":
+                out.append(t[:-1])
+                else:
+                    out.append(t)
+        return out
+
 
 def tokenize_wrapper(text):
+    """
+        wrapper function for NLTK tokenizer
+        
+        Args:
+        text: a question
+        
+        Returns:
+        a list contains a tokenized text
+    """
 	return post(nltk.word_tokenize(text))
 
-def base(df, nprocs=12):
+
+def base(df, nprocs=15):
+    """
+        perform basic preprocessing in parallel
+        
+        Args:
+        df: Pandas dataframe object
+        nprocs: number of processes used
+        
+        Returns:
+        Pandas dataframe object with preprocessed texts
+    """
+            
 	t = time.time()
 	# prepare a shared resource and manager classes
 	manager = ResourceManager()
@@ -118,11 +178,23 @@ def base(df, nprocs=12):
 	print "Time {0}".format(time.time() - t)
 	return df_out
 
+
 def base_worker(shared_obj, df, iproc):
-	# apply very basic preprocessing
+    """
+        base worker function for text preprocessing
+        
+        Args:
+        shared_obj: word2vec dictionary
+        df: Pandas dataframe object
+        iproc: process index
+        
+        Returns:
+        Pandas dataframe object with preprocessed texts
+    """
 	try:
 		df.fillna(value="", inplace=True)
 		vocab = shared_obj.get("word2vec_vocab")
+        # preprocess
 		df["q1"] = df["question1"].apply(prep, args=(vocab,))
 		df["q2"] = df["question2"].apply(prep, args=(vocab,))
 	
@@ -138,11 +210,21 @@ def base_worker(shared_obj, df, iproc):
 		raise Exception("Exception")
 	return iproc, df
 
+
 def extract_phone(text):
-	# assume there is only one us number in one question
+    """
+        extract a phone number
+        
+        Args:
+        text: a question
+        
+        Returns:
+        an empty string or a phone number
+    """
 	try:
+        # assumes there is only one us number in one question but this is likely wrong
 		for match in phonenumbers.PhoneNumberMatcher(text, "US"):
-			return phonenumbers.format_number(match.number, phonenumbers.PhoneNumberFormat.E164)	
+			return phonenumbers.format_number(match.number, phonenumbers.PhoneNumberFormat.E164)
 	except:
 		pass
 	return ""
