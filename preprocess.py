@@ -12,8 +12,6 @@ import time
 import gensim
 import nltk
 import phonenumbers
-
-import utils
 from multiprocessing import Process, Pool
 from multiprocessing.managers import BaseManager
 
@@ -25,7 +23,7 @@ PREPROCESS_UNITS="./resource/units.csv"
 
 class SharedResource(object):
     """
-        hold a word2vec model and used to parallel process texts
+        hold a word2vec model and used it to preprocess texts in parallel
     """
 	def __init__(self):
 		print "initialize word2vec"
@@ -146,6 +144,28 @@ def tokenize_wrapper(text):
 	return post(nltk.word_tokenize(text))
 
 
+def indices_for(df, nprocs):
+    """
+        group rows in dataframe and assign each group to each process
+        
+        Args:
+        df: Pandas dataframe object
+        nprocs: number of processes used
+        
+        Returns:
+        indeces grouped to each process
+    """
+    N = df.shape[0]
+    L = int(N / nprocs)
+    indices = []
+    for i in range(nprocs):
+        for j in range(L):
+            indices.append(i)
+    for i in range(N - (nprocs * L)):
+        indices.append(nprocs - 1)
+    return indices
+
+
 def base(df, nprocs=15):
     """
         perform basic preprocessing in parallel
@@ -166,7 +186,7 @@ def base(df, nprocs=15):
 	
 	# run in parallel
 	pool = Pool(nprocs)
-	for i, (name, df_group) in enumerate(df.groupby(utils.indices_for(df, nprocs))):
+	for i, (name, df_group) in enumerate(df.groupby(indices_for(df, nprocs))):
 		pool.apply_async(func=base_worker, args=(shared, df_group, i), callback=aggregate)
 	pool.close()
 	pool.join()

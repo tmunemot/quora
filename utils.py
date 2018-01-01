@@ -21,17 +21,6 @@ def notify(section, dlen=75):
 notify.t_start = -1
 notify.section_id = 1
 
-def indices_for(df, nprocs):
-	N = df.shape[0]
-	L = int(N / nprocs)
-	indices = []
-	for i in range(nprocs):
-		for j in range(L):
-			indices.append(i)
-	for i in range(N - (nprocs * L)):
-		indices.append(nprocs - 1)
-	return indices
-
 def main(argv):
     print "do not run"
 
