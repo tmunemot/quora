@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """ functions for preprocessing question texts in parallel
 """
@@ -16,23 +16,32 @@ from multiprocessing import Process, Pool
 from multiprocessing.managers import BaseManager
 
 
-WORD2VEC_BINARY_FILE="./resource/GoogleNews-vectors-negative300.bin"
+WORD2VEC_FILE="./resource/GoogleNews-vectors-negative300.bin"
+
+# TODO: add support for glove model
+# converted original glove file format
+# python -m gensim.scripts.glove2word2vec --input glove.840B.300d.txt --output glove.840B.300d.word2vecformat.txt
+# GLOVE_FILE="./resource/glove.840B.300d.word2vecformat.txt"
+
 PREPROCESS_GENERAL="./resource/replace.csv"
 PREPROCESS_UNITS="./resource/units.csv"
 
 
 class SharedResource(object):
     """
-        hold a word2vec model and used it to preprocess texts in parallel
+        hold word2vec and glove embeddings and used them to preprocess texts in parallel
     """
-	def __init__(self):
-		print "initialize word2vec"
-		self.word2vec = gensim.models.KeyedVectors.load_word2vec_format(WORD2VEC_BINARY_FILE, binary=True)
-		self.word2vec_vocab = set(self.word2vec.vocab.keys())		
-	def get(self, fname):
-		if fname == "word2vec_vocab":
-			return self.word2vec_vocab	
-		raise Exception("{0} is not defined".format(fname))
+    def __init__(self):
+        print "load word2vec"
+        self.word2vec = gensim.models.KeyedVectors.load_word2vec_format(WORD2VEC_FILE, binary=True)
+        self.vocab = set(self.word2vec.vocab.keys())
+        #print "load glove"
+        #self.glove = gensim.models.KeyedVectors.load_word2vec_format(GLOVE_FILE)
+        #self.vocab = set(self.word2vec.vocab.keys()) | set(self.glove.vocab.keys())
+    def get(self, fname):
+        if fname == "vocab":
+            return self.vocab
+        raise Exception("{0} is not defined".format(fname))
 
 class ResourceManager(BaseManager):
 	pass
@@ -46,7 +55,7 @@ def aggregate(ret):
         Args:
         ret: a dataframe object returned by a process
     """
-	aggregate.out.append(ret)
+    aggregate.out.append(ret)
 aggregate.out = []
 
 
@@ -61,30 +70,30 @@ def prep(text, vocabs):
         Returns:
         preprocessed text
     """
-	text = text.decode("utf-8")
-	text = re.sub("’", "'", text)
-	text = re.sub("`", "'", text)
-	text = re.sub("“", '"', text)
-	text = re.sub("？", "?", text)
-	text = re.sub("…", " ", text)
-	text = re.sub("é", "e", text)
-	text = re.sub(r"\.+", ".", text)
-	text = text.replace("[math]", " ")
-	text = text.replace("[/math]", " ")
+    text = text.decode("utf-8")
+    text = re.sub("’", "'", text)
+    text = re.sub("`", "'", text)
+    text = re.sub("“", '"', text)
+    text = re.sub("？", "?", text)
+    text = re.sub("…", " ", text)
+    text = re.sub("é", "e", text)
+    text = re.sub(r"\.+", ".", text)
+    text = text.replace("[math]", " ")
+    text = text.replace("[/math]", " ")
     
-	if prep.dict is None:
-		prep.dict = pd.read_csv(PREPROCESS_GENERAL).set_index("src")["dst"].to_dict()
-		for k in prep.dict.keys():
-			prep.dict[k.lower()] = prep.dict[k]
-	for k in prep.dict.keys():
-		if k in text:
-			text = text.replace(k, prep.dict[k])
-	if prep.units is None:
-		with open(PREPROCESS_UNITS, "rU") as f:
-			prep.units = [l.replace('\n','') for l in f]
+    if prep.dict is None:
+        prep.dict = pd.read_csv(PREPROCESS_GENERAL).set_index("src")["dst"].to_dict()
+        for k in prep.dict.keys():
+            prep.dict[k.lower()] = prep.dict[k]
+    for k in prep.dict.keys():
+        if k in text:
+            text = text.replace(k, prep.dict[k])
+    if prep.units is None:
+        with open(PREPROCESS_UNITS, "rU") as f:
+            prep.units = [l.replace('\n','') for l in f]
 
-	for u in prep.units:
-		text = re.sub(r"(\d+\.\d+){0}".format(u),"\\1 {0}".format(u), text)
+    for u in prep.units:
+        text = re.sub(r"(\d+\.\d+){0}".format(u),"\\1 {0}".format(u), text)
     
 	matches = re.finditer(r"([a-zA-z]*)\.([a-zA-z]*)", text)
 	for match in matches:
@@ -123,12 +132,12 @@ def post(tokens):
         processed tokens
     """
     out = []
-        for t in tokens:
-            if t[-1] == ".":
-                out.append(t[:-1])
-                else:
-                    out.append(t)
-        return out
+    for t in tokens:
+        if t[-1] == ".":
+            out.append(t[:-1])
+        else:
+            out.append(t)
+    return out
 
 
 def tokenize_wrapper(text):
@@ -141,7 +150,14 @@ def tokenize_wrapper(text):
         Returns:
         a list contains a tokenized text
     """
-	return post(nltk.word_tokenize(text))
+    tokens = nltk.word_tokenize(text)
+    out = []
+    for t in tokens:
+        if t[-1] == ".":
+            out.append(t[:-1])
+        else:
+            out.append(t)
+    return out
 
 
 def indices_for(df, nprocs):
@@ -178,25 +194,25 @@ def base(df, nprocs=15):
         Pandas dataframe object with preprocessed texts
     """
             
-	t = time.time()
-	# prepare a shared resource and manager classes
-	manager = ResourceManager()
-	manager.start()
-	shared = manager.SharedResource()
+    t = time.time()
+    # prepare a shared resource and manager classes
+    manager = ResourceManager()
+    manager.start()
+    shared = manager.SharedResource()
 	
-	# run in parallel
-	pool = Pool(nprocs)
-	for i, (name, df_group) in enumerate(df.groupby(indices_for(df, nprocs))):
-		pool.apply_async(func=base_worker, args=(shared, df_group, i), callback=aggregate)
-	pool.close()
-	pool.join()
+    # run in parallel
+    pool = Pool(nprocs)
+    for i, (name, df_group) in enumerate(df.groupby(indices_for(df, nprocs))):
+        pool.apply_async(func=base_worker, args=(shared, df_group, i), callback=aggregate)
+    pool.close()
+    pool.join()
 
 	# post process
-	aggregate.out.sort(key=lambda x: x[0])
-	df_out = pd.concat([df_ret for i, df_ret in aggregate.out])
-	aggregate.out = []
-	print "Time {0}".format(time.time() - t)
-	return df_out
+    aggregate.out.sort(key=lambda x: x[0])
+    df_out = pd.concat([df_ret for i, df_ret in aggregate.out])
+    aggregate.out = []
+    print "Time {0}".format(time.time() - t)
+    return df_out
 
 
 def base_worker(shared_obj, df, iproc):
@@ -211,9 +227,9 @@ def base_worker(shared_obj, df, iproc):
         Returns:
         Pandas dataframe object with preprocessed texts
     """
-	try:
+    try:
 		df.fillna(value="", inplace=True)
-		vocab = shared_obj.get("word2vec_vocab")
+		vocab = shared_obj.get("vocab")
         # preprocess
 		df["q1"] = df["question1"].apply(prep, args=(vocab,))
 		df["q2"] = df["question2"].apply(prep, args=(vocab,))
@@ -225,10 +241,10 @@ def base_worker(shared_obj, df, iproc):
 		# add phone numbers if exists
 		df["q1_phone_us"] = df["q1"].apply(extract_phone)
 		df["q2_phone_us"] = df["q2"].apply(extract_phone)
-	except:
+    except:
 		traceback.print_exc()
 		raise Exception("Exception")
-	return iproc, df
+    return iproc, df
 
 
 def extract_phone(text):
@@ -241,11 +257,11 @@ def extract_phone(text):
         Returns:
         an empty string or a phone number
     """
-	try:
-        # assumes there is only one us number in one question but this is likely wrong
+    try:
+        # assumes there is only one us number in one question but this might be wrong
 		for match in phonenumbers.PhoneNumberMatcher(text, "US"):
 			return phonenumbers.format_number(match.number, phonenumbers.PhoneNumberFormat.E164)
-	except:
+    except:
 		pass
-	return ""
+    return ""
 

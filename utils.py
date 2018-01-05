@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 import sys
 import os
 import time
@@ -7,11 +7,11 @@ import multiprocessing
 import sklearn.metrics
 import numpy as np
 import pandas as pd
-
+import mmap
 
 def mkdir_p(path):
     """
-        emulate to "mkdir -p" in Python
+        a function equivalent to "mkdir -p" in bash scripting
         https://stackoverflow.com/questions/600268/mkdir-p-functionality-in-python
         
         Args:
@@ -19,7 +19,7 @@ def mkdir_p(path):
         
         Returns:
         None
-        """
+    """
     try:
         os.makedirs(path)
     except OSError as exc:  # Python >2.5
@@ -27,13 +27,6 @@ def mkdir_p(path):
             pass
         else:
             raise
-
-
-def add_evaluate_base_args(parser):
-    parser.add_argument("train", help="training data")
-    parser.add_argument("val", help="validation data")
-    parser.add_argument("dev", help="development data used during training")
-    parser.add_argument("outdir", help="output directory")
 
 
 def notify(section, dlen=75):
@@ -62,6 +55,25 @@ def notify(section, dlen=75):
     notify.section_id += 1
 notify.t_start = -1
 notify.section_id = 1
+
+
+def get_num_lines(file_path):
+    """
+        a function for counting lines in a file
+        https://stackoverflow.com/questions/845058/how-to-get-line-count-cheaply-in-python/850962#850962
+        
+        Args:
+        file_path: path to a file
+        
+        Returns:
+        count
+    """
+    fp = open(file_path, "r+")
+    buf = mmap.mmap(fp.fileno(), 0)
+    lines = 0
+    while buf.readline():
+        lines += 1
+    return lines
 
 
 def create_prediction_df(y, y_proba, ids):

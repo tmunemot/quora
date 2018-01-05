@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 """ evaluate xgboost algorithm for Quora question pairs challenge """
 import sys
 import os
@@ -8,8 +8,8 @@ import pandas as pd
 import xgboost as xgb
 
 from collections import OrderedDict
-from utils import add_evaluate_base_args, mkdir_p, create_prediction_df, metrics
-
+import args_common
+import utils
 
 XGB_PARAMS={
     "colsample_bytree": 0.6,
@@ -27,7 +27,7 @@ XGB_PARAMS={
 
 def parse_args(argv):
     parser = argparse.ArgumentParser(description=__doc__)
-    add_evaluate_base_args(parser)
+    args_common.add_evaluation_args(parser)
     # TODO: add an option for xgboost hyperparameters
     return parser.parse_args(argv)
 
@@ -78,9 +78,9 @@ def predict(bst, df, outpath, is_submission=False):
     y_pred = bst.predict(X)
 
     if not is_submission:
-        df_pred = create_prediction_df(y, y_pred, df["id"].values)
+        df_pred = utils.create_prediction_df(y, y_pred, df["id"].values)
         df_pred.to_csv(outpath, index=False)
-        df_metrics, conf = metrics(y, y_pred)
+        df_metrics, conf = utils.metrics(y, y_pred)
         print df_metrics
         df_metrics.to_csv(outpath[:-4] + "_metrics.csv", index=False)		
     else:
@@ -119,7 +119,7 @@ def xgboost_evaluation(df_train, df_dev, df_val, outdir):
         Returns:
         None
     """
-    mkdir_p(outdir)
+    utils.mkdir_p(outdir)
     bst = fit(df_train, os.path.join(outdir, "xgboost_model.out"), df_dev)
     predict(bst, df_dev, os.path.join(outdir, "development.csv"))
     predict(bst, df_val, os.path.join(outdir, "validation.csv"))

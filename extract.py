@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """ extract features from question texts """
 import sys
@@ -10,7 +10,6 @@ import argparse
 import multiprocessing
 
 import tqdm
-import preprocess
 import scipy.stats
 import scipy.spatial
 import sklearn.metrics.pairwise
@@ -23,19 +22,20 @@ from gensim.models.keyedvectors import KeyedVectors
 from nltk import ngrams
 from nltk.corpus import stopwords
 
-PATH_GLOVE_DATA = "./resource/glove.840B.300d.txt"
-glove_weights = {}
+import preprocess
+import utils
 
 eng_stopwords = set(stopwords.words("english"))
 model_word2vec = None
 
 def parse_args(argv):
 	parser = argparse.ArgumentParser(description="Performs feature extraction.")
-	parser.add_argument("-n", "--nprocs", help="number of processes", type=int, default=15)
+	parser.add_argument("-n", "--nprocs", help="number of processes", type=int, default=7)
 	parser.add_argument("-t", "--test", nargs="+", help="list of paths to test csv files")
 	parser.add_argument("train", help="path to a train csv file")
 	parser.add_argument("outdir", help="path to an output directory")
 	return parser.parse_args(argv)
+
 
 def worker(args):
     """
@@ -47,31 +47,32 @@ def worker(args):
         Returns:
         feature values stored in an ordered dictionary
     """
-	q1 = args["q1"]
-	q2 = args["q2"]
+    q1 = args["q1"]
+    q2 = args["q2"]
 
-	if len(q1) < 2 or len(q2) < 2:
+    if len(q1) < 2 or len(q2) < 2:
 		print "skipped an empty question for {0}".format(args["id"])
 		return None
 
-	row = OrderedDict()	
-	row["id"] = args["id"]
+    row = OrderedDict()
+    row["id"] = args["id"]
 	
 	# n-gram features
-	extract_base(q1, q2, row)
+    extract_base(q1, q2, row)
     
 	# glove features
-	try:
-		extract_glove(q1, q2, row)
-	except:
-		return None
+    #try:
+    #    extract_glove(q1, q2, row)
+    #except:
+    #	return None
 	
     # word2vec
-	#extract_word2vec(q1, q2, row)
-	if args["classlabel"] is not None:
-		row["classlabel"] = args["classlabel"]
+	extract_word2vec(q1, q2, row)
+    if args["is_duplicate"] is not None:
+        row["is_duplicate"] = args["is_duplicate"]
 	
-	return row
+    return row
+
 
 def ngram_val(s1, s2):
     """
@@ -84,10 +85,11 @@ def ngram_val(s1, s2):
         Returns:
         None
     """
-	count = float(len(s1 & s2))
-	ratio = count / np.max([len(s1 | s2), 1])
-	return count, ratio
-	
+    count = float(len(s1 & s2))
+    ratio = count / np.max([len(s1 | s2), 1])
+    return count, ratio
+
+
 def extract_base(q1, q2, row):
     """
         extract n-gram features
@@ -100,26 +102,26 @@ def extract_base(q1, q2, row):
         Returns:
         None
     """
-	row["base_wlen_diff"] = np.abs(len(q1) - len(q2))
+    row["base_wlen_diff"] = np.abs(len(q1) - len(q2))
 	
-	global eng_stopwords
+    global eng_stopwords
 	
-	q1_cl = [v for v in q1 if v not in eng_stopwords]
-	q2_cl = [v for v in q2 if v not in eng_stopwords]
-	# unigram
-	s1 = set(q1_cl)
-	s2 = set(q2_cl)
-	row["base_ugram_count"], row["base_ugram_ratio"] = ngram_val(s1, s2)
+    q1_cl = [w for w in q1.lower().split() if w not in eng_stopwords]
+    q2_cl = [w for w in q2.lower().split() if w not in eng_stopwords]
+    # unigram
+    s1 = set(q1_cl)
+    s2 = set(q2_cl)
+    row["base_ugram_count"], row["base_ugram_ratio"] = ngram_val(s1, s2)
 	
 	# bigram
-	s1 = set([v for v in ngrams(q1_cl, 2)])
-	s2 = set([v for v in ngrams(q2_cl, 2)])
-	row["base_bgram_count"], row["base_bgram_ratio"] = ngram_val(s1, s2)
+    s1 = set([v for v in ngrams(q1_cl, 2)])
+    s2 = set([v for v in ngrams(q2_cl, 2)])
+    row["base_bgram_count"], row["base_bgram_ratio"] = ngram_val(s1, s2)
 		
 	# trigram
-	s1 = set([v for v in ngrams(q1_cl, 3)])
-	s2 = set([v for v in ngrams(q2_cl, 3)])
-	row["base_tgram_count"], row["base_tgram_ratio"] = ngram_val(s1, s2)
+    s1 = set([v for v in ngrams(q1_cl, 3)])
+    s2 = set([v for v in ngrams(q2_cl, 3)])
+    row["base_tgram_count"], row["base_tgram_ratio"] = ngram_val(s1, s2)
 
 	
 def basic_stats(x, row, prefix):
@@ -134,9 +136,9 @@ def basic_stats(x, row, prefix):
         Returns:
         None
     """
-	N = len(x)
-	for field in ["mean", "std", "skew", "kurtosis", "min", "max", "range", "q1", "median", "q3", "iqrange", "mad", "coefvar"]:
-		row[prefix + "_" + field] = np.nan	
+    N = len(x)
+    for field in ["mean", "std", "skew", "kurtosis", "min", "max", "range", "q1", "median", "q3", "iqrange", "mad", "coefvar"]:
+        row[prefix + "_" + field] = np.nan
 
 	if N > 0:
 		row[prefix + "_mean"] = np.mean(x)
@@ -156,7 +158,8 @@ def basic_stats(x, row, prefix):
 		row[prefix + "_q1"] = np.percentile(x, 25)
 		row[prefix + "_q3"] = np.percentile(x, 75)
 		row[prefix + "_iqrange"] = row[prefix + "_q3"] - row[prefix + "_q1"]
-	
+
+
 def extract_glove(q1, q2, row):
     """
         extract statistics of cosine similarities calculated over Glove vectors from each question
@@ -168,11 +171,12 @@ def extract_glove(q1, q2, row):
         Returns:
         None
     """
-	v1 = get_glove_vecs(q1)
-	v2 = get_glove_vecs(q2)
-	cos = sklearn.metrics.pairwise.cosine_similarity(v1, v2)
-	cos = cos.reshape((1, -1))
-	basic_stats(cos, row, "glove_cos")
+    v1 = get_glove_vecs(q1)
+    v2 = get_glove_vecs(q2)
+    cos = sklearn.metrics.pairwise.cosine_similarity(v1, v2)
+    cos = cos.reshape((1, -1))
+    basic_stats(cos, row, "glove_cos")
+
 
 def get_glove_vecs(q):
     """
@@ -184,16 +188,16 @@ def get_glove_vecs(q):
         Returns:
         a list of Clove vectors stored in a two dimensional array
     """
-	global glove_weights, eng_stopwords
-	v = []
-	for w in q:	
-		if w in glove_weights:
+    global glove_weights, eng_stopwords
+    v = []
+    for w in q:
+        if w in glove_weights:
 			v.append(glove_weights[w])
-		elif (len(w) >= 2) and (w[-1] == 's') and (w[:-1] in glove_weights):
-			v.append(glove_weights[w[:-1]])
-		else:
-			continue
-	return np.array(v)		
+        elif (len(w) >= 2) and (w[-1] == 's') and (w[:-1] in glove_weights):
+            v.append(glove_weights[w[:-1]])
+        else:
+            continue
+    return np.array(v)
 
 
 def init_glove():
@@ -206,17 +210,18 @@ def init_glove():
         Returns:
         None
     """
-	start = timer()
-	print_div("initializing Glove")
-	global glove_weights
-	with open(PATH_GLOVE_DATA) as f:
-		for line in f.readlines():
-			values = line.split()
-			word = values[0]
-			coefs = np.asarray(values[1:], dtype='float32')
-			glove_weights[word] = coefs
-	print "{0} sec".format(np.round(timer() - start))
-	
+    start = timer()
+    print "initialize glove"
+    global glove_weights
+    with open(PATH_GLOVE_DATA) as f:
+        for line in tqdm.tqdm(f, total=utils.get_num_lines(PATH_GLOVE_DATA)):
+            values = line.split()
+            word = values[0]
+            coefs = np.asarray(values[1:], dtype='float32')
+            glove_weights[word] = coefs
+    print "finished - {0} sec".format(np.round(timer() - start))
+
+
 def extract_word2vec(q1, q2, row):
     """
         extract similarities from two sets of vectors
@@ -230,6 +235,8 @@ def extract_word2vec(q1, q2, row):
         None
     """
     global model_word2vec
+    if model_word2vec is None:
+        model_word2vec = preprocess.
     s = []
     for w1 in q1:
         for w2 in q2:
@@ -239,19 +246,7 @@ def extract_word2vec(q1, q2, row):
 				print "skip ({0},{1})".format(w1, w2) 				
     basic_stats(s, row, "word2vec_")
 
-def print_div(msg, N=75):
-    """
-        print divider with a message inlined
-        
-        Args:
-        msg: a message
-        N: length of a divider
-        
-        Returns:
-        None
-    """
-	print msg + ' ' + '-' * (N - len(msg))
-	
+
 def extract(train, tests, outdir, nprocs):
     """
         extract features
@@ -264,27 +259,34 @@ def extract(train, tests, outdir, nprocs):
         Returns:
         None
     """
-	init_glove()
-    split_text = lambda t: t.lower().split()
 
-	df_train = pd.read_csv(train)	
-	print_div('preprocess ' + os.path.basename(train))
-	start = timer()
-	df_train = preprocess.preprocess_texts(df_train)
-	df_train["question1"] = df_train["question1"].apply(split_text)
-	df_train["question2"] = df_train["question2"].apply(split_text)
-	print "{0} sec".format(np.round(timer() - start))
-	extract_in_parallel(df_train, nprocs, os.path.join(outdir, os.path.basename(train)))
+    # preprocess train data
+    start = timer()
+    print "preprocess {0}".format(train)
+    df_train = preprocess.base(pd.read_csv(train), nprocs)
+    print "{0} sec".format(np.round(timer() - start))
+    
+    # extract from train data
+    start = timer()
+    print "extract {0}".format(train)
+    extract_in_parallel(df_train, nprocs, os.path.join(outdir, os.path.basename(train)))
+    print "{0} sec".format(np.round(timer() - start))
 
-	# test
-	if tests is not None:
-		for test in tests:
-			print test
-			df_test = preprocess.preprocess_texts(pd.read_csv(test))
-			df_test["question1"] = df_test["question1"].apply(split_text)
-			df_test["question2"] = df_test["question2"].apply(split_text)
-			extract_in_parallel(df_test, n_threads, os.path.join(outdir, os.path.basename(test)))
-	
+    if tests is not None:
+        for test in tests:
+            # preprocess test data
+            start = timer()
+            print "preprocess {0}".format(test)
+            df_test = preprocess.base(pd.read_csv(test), nprocs)
+            print "{0} sec".format(np.round(timer() - start))
+    
+            # extract from test data
+            start = timer()
+            print "extract {0}".format(test)
+            extract_in_parallel(df_test, nprocs, os.path.join(outdir, os.path.basename(test)))
+            print "{0} sec".format(np.round(timer() - start))
+
+
 def extract_in_parallel(df, nprocs, outfile):
     """
         extract features in parallel
@@ -297,29 +299,31 @@ def extract_in_parallel(df, nprocs, outfile):
         Returns:
         None
     """
-	with open(outfile, "wb") as f:
-		worker_args = [{
-			"q1": r["question1"],
-			"q2": r["question2"],
+    with open(outfile, "wb") as f:
+        worker_args = [{
+			"q1": r["q1"],
+			"q2": r["q2"],
 			"id": r["id"] if "id" in r else r["test_id"],
-			"classlabel": r["is_duplicate"] if "is_duplicate" in r else None
+			"is_duplicate": r["is_duplicate"] if "is_duplicate" in r else None
 		} for i, r in df.iterrows()]
-		pool = multiprocessing.Pool(processes=nprocs)
-		with open(outfile, "wb") as f:
-			firstline=True
-			#for row in tqdm.tqdm(pool.imap_unordered(worker, worker_args)):
-			for args in tqdm.tqdm(worker_args):
-				row = worker(args)
-				if row is None:
-					continue
-				if firstline:
-					print >> f, ",".join(row.keys())
-					firstline = False
-				print >> f, ",".join([str(v) for v in row.values()])
+        pool = multiprocessing.Pool(processes=nprocs)
+        with open(outfile, "wb") as f:
+            firstline=True
+            for row in tqdm.tqdm(pool.imap(worker, worker_args)):
+                #for args in tqdm.tqdm(worker_args):
+                #row = worker(args)
+                if row is None:
+                    continue
+                if firstline:
+                    print >> f, ",".join(row.keys())
+                    firstline = False
+                print >> f, ",".join([str(v) for v in row.values()])
+
 
 def main(argv):
 	args=parse_args(argv)
 	extract(args.train, args.test, args.outdir, args.nprocs)
-    
+
+
 if __name__ == '__main__':
     exit(main(sys.argv[1:]))
