@@ -79,7 +79,7 @@ def add_siamese_architecture_args(parser):
                         help="use bidirectional recurrent units (default False)", action="store_true")
 
 
-def get_model(weights, siamese_params, embedding_dim):
+def get_model(weights, siamese_params):
     """
         return a keras model
         
@@ -91,7 +91,7 @@ def get_model(weights, siamese_params, embedding_dim):
         a keras model object
     """
     # parse parameters
-    num_words = siamese_params["num_words"]
+    num_words, embedding_dim = weights.shape
     max_sequence_length = siamese_params["max_sequence_length"]
     recurrent_unit = siamese_params["recurrent_unit"]
     siamese_metric = siamese_params["siamese_metric"]
@@ -103,10 +103,10 @@ def get_model(weights, siamese_params, embedding_dim):
 
     # untrainable embedding layer
     embedding_layer = Embedding(num_words,
-                                    embedding_dim,
-                                    weights=[weights],
-                                    input_length=max_sequence_length,
-                                    trainable=False)
+                                embedding_dim,
+                                weights=[weights],
+                                input_length=max_sequence_length,
+                                trainable=False)
     q1 = embedding_layer(input_q1)
     q2 = embedding_layer(input_q2)
     
@@ -196,7 +196,7 @@ def load_weights(filepath, tk, max_num_words):
             break;
         if word in model_word2vec.wv:
             weights[i] = model_word2vec.wv[word]
-    return weights, num_words
+    return weights
 
 
 def fit_tokenizer(df_train, max_num_words):
@@ -254,7 +254,7 @@ def fit(df, outfile, df_test, weights, dnn_train_params, siamese_params):
     batch_size = dnn_train_params["batch_size"]
     pretraind = dnn_train_params["pretrained"]
     
-    siamese_model = get_model(weights, siamese_params, WORD2VEC_EMBEDDING_DIM)
+    siamese_model = get_model(weights, siamese_params)
     siamese_model.summary()
     model_checkpoint = ModelCheckpoint(outfile, monitor='loss', save_best_only=True)
     
