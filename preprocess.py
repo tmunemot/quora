@@ -41,6 +41,8 @@ class SharedResource(object):
     def get(self, fname):
         if fname == "vocab":
             return self.vocab
+        elif fname == "model":
+            return self.word2vec
         raise Exception("{0} is not defined".format(fname))
 
 class ResourceManager(BaseManager):
@@ -212,7 +214,7 @@ def base(df, nprocs=15):
     df_out = pd.concat([df_ret for i, df_ret in aggregate.out])
     aggregate.out = []
     print "Time {0}".format(time.time() - t)
-    return df_out
+    return df_out, shared.get("model")
 
 
 def base_worker(shared_obj, df, iproc):

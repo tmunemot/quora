@@ -26,11 +26,10 @@ import args_common
 import utils
 
 
-GLOVE_FILE="./resource/glove.840B.300d.txt"
 SIMIRALITY_RBF_GAMMA = 1.0
+WORD2VEC_EMBEDDING_DIM = 300
 DEFAULT_ARCH={
     "max_sequence_length": 32,
-    "embedding_dim": 300,
     "siamese_metric": "manhattan",
     "recurrent_unit": "lstm",
     "num_units": 64,
@@ -61,9 +60,6 @@ def add_siamese_architecture_args(parser):
                         help="maximum length of each question (default {0})".format(DEFAULT_ARCH["max_sequence_length"]),
                         type=int,
                         default=DEFAULT_ARCH["max_sequence_length"])
-    parser.add_argument("--embedding-dim",
-                        help="dimension of Glove vectors (default {0})".format(DEFAULT_ARCH["embedding_dim"]), type=int,
-                        default=DEFAULT_ARCH["embedding_dim"])
     parser.add_argument("--max-num-words",
                         help="maximum number of possible words in embedding (default {0})".format(DEFAULT_ARCH["max_num_words"]),
                         type=int,
@@ -83,7 +79,7 @@ def add_siamese_architecture_args(parser):
                         help="use bidirectional recurrent units (default False)", action="store_true")
 
 
-def get_model(weights, siamese_params):
+def get_model(weights, siamese_params, embedding_dim):
     """
         return a keras model
         
@@ -97,7 +93,6 @@ def get_model(weights, siamese_params):
     # parse parameters
     num_words = siamese_params["num_words"]
     max_sequence_length = siamese_params["max_sequence_length"]
-    embedding_dim = siamese_params["embedding_dim"]
     recurrent_unit = siamese_params["recurrent_unit"]
     siamese_metric = siamese_params["siamese_metric"]
     bidirectional = siamese_params["bidirectional"]
@@ -118,10 +113,10 @@ def get_model(weights, siamese_params):
     # add a shared recurrent layer
     if recurrent_unit == "lstm":
         # LSTM
-        recurrent_layer = LSTM(64, dropout=0.2, recurrent_dropout=0.2)
+        recurrent_layer = LSTM(num_units, dropout=0.2, recurrent_dropout=0.2)
     elif recurrent_unit == "gru":
         # GRU
-        recurrent_layer = GRU(64, dropout=0.2, recurrent_dropout=0.2)
+        recurrent_layer = GRU(num_units, dropout=0.2, recurrent_dropout=0.2)
     else:
         raise ValueError("recurrent unit {0} is not supported".format(recurrent_unit))
 
@@ -138,6 +133,7 @@ def get_model(weights, siamese_params):
     model = Model(inputs=[input_q1, input_q2], outputs=pred)
     model.compile(loss=_logloss, optimizer='adam', metrics=['accuracy', _logloss])
     return model
+
 
 def _logloss(y_true, y_pred):
     """
@@ -186,27 +182,20 @@ def similarity(metric):
         return K.exp(-1 * SIMIRALITY_RBF_GAMMA * l2_norm(x[0], x[1]) ** 2.0)
 
 
-def load_weights(filepath, tk, max_num_words, embedding_dim):
+def load_weights(filepath, tk, max_num_words):
 
-    # load glove
+    # load word2vec
+    model_word2vec = gensim.models.KeyedVectors.load_word2vec_format(filepath, binary=True)
+    
+    # convert to 2d numpy array
+    num_words = min(len(self.word2vec.vocab.keys()), max_num_words)
+    weights = np.zeros((num_words, WORD2VEC_EMBEDDING_DIM), type=np.float32)
     word_index = tk.word_index
-    embeddings_index={}
-    with open(filepath, encoding="utf8") as f:
-        for line in f.readlines():
-            values = line.split()
-            word = values[0]
-            coefs = np.asarray(values[1:], dtype='float32')
-            embeddings_index[word] = coefs
-
-    # create weights
-    num_words = min(max_num_words, len(word_index))
-    weights = np.zeros((num_words, embedding_dim))
     for word, i in word_index.items():
-        if i >= max_num_words:
-            continue
-        vec = embeddings_index.get(word)
-        if vec is not None:
-            weights[i] = vec
+        if i > num_words:
+            break;
+        if word in model_word2vec.wv:
+            weights[i] = model_word2vec.wv[word]
     return weights, num_words
 
 
@@ -265,7 +254,7 @@ def fit(df, outfile, df_test, weights, dnn_train_params, siamese_params):
     batch_size = dnn_train_params["batch_size"]
     pretraind = dnn_train_params["pretrained"]
     
-    siamese_model = get_model(weights, siamese_params)
+    siamese_model = get_model(weights, siamese_params, WORD2VEC_EMBEDDING_DIM)
     siamese_model.summary()
     model_checkpoint = ModelCheckpoint(outfile, monitor='loss', save_best_only=True)
     
@@ -325,7 +314,6 @@ def siamese_evaluation(df_train, df_dev, df_val, outdir, nprocs, dnn_train_param
     # parse parameters
     max_num_words = params["max_num_words"]
     max_sequence_length = params["max_sequence_length"]
-    embedding_dim = params["embedding_dim"]
     
     # preprocess all data
     df_train = preprocess.base(df_train, nprocs)
@@ -339,12 +327,11 @@ def siamese_evaluation(df_train, df_dev, df_val, outdir, nprocs, dnn_train_param
     val = transform_tokenizer(df_val, tokenizer, max_sequence_length)
 
     # load glove weights used in word embedding
-    weights = load_weights(GLOVE_FILE, tokenizer, max_num_words, embedding_dim)
+    weights = load_weights(preprocess.WORD2VEC_FILE, tokenizer, max_num_words)
     
     # train a model
     siamese_model = fit(train, os.path.join(outdir, "siamese_model.out"), dev, weights, dnn_train_params, siamese_params)
 
-    
     # predict
     predict(siamese_model, dev, os.path.join(outdir, "development.csv"))
     predict(siamese_model, val, os.path.join(outdir, "validation.csv"))
