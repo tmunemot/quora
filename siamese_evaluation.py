@@ -35,12 +35,13 @@ DEFAULT_ARCH={
     "recurrent_unit": "lstm",
     "num_units": 64,
     "max_num_words": 20000,
+    "bidirectional": True,
 }
 
 
 def parse_args(argv):
     parser = argparse.ArgumentParser(description=__doc__)
-    args_common.add_evaluatation_args(parser)
+    args_common.add_evaluation_args(parser)
     args_common.add_dnn_train_args(parser)
     add_siamese_architecture_args(parser)
     return parser.parse_args(argv)
@@ -57,65 +58,50 @@ def add_siamese_architecture_args(parser):
         None
     """
     parser.add_argument("--max-sequence-length",
-                        help="maximum length of each question",
-                        type=int, DEFAULT_ARCH["max_sequence_length"])
-    parser.add_argument("--embedding-dim",
-                        help="dimension of Glove vectors",
+                        help="maximum length of each question (default {0})".format(DEFAULT_ARCH["max_sequence_length"]),
                         type=int,
+                        default=DEFAULT_ARCH["max_sequence_length"])
+    parser.add_argument("--embedding-dim",
+                        help="dimension of Glove vectors (default {0})".format(DEFAULT_ARCH["embedding_dim"]), type=int,
                         default=DEFAULT_ARCH["embedding_dim"])
     parser.add_argument("--max-num-words",
-                    help="maximum number of possible words in embedding",
-                    type=int, DEFAULT_ARCH["max_num_words"])
+                        help="maximum number of possible words in embedding (default {0})".format(DEFAULT_ARCH["max_num_words"]),
+                        type=int,
+                        default=DEFAULT_ARCH["max_num_words"])
     parser.add_argument("--siamese-metric",
-                        help="a distance metric used in Siamese architecture",
+                        help="a distance metric used in Siamese architecture (default {0})".format(DEFAULT_ARCH["siamese_metric"]),
                         default=DEFAULT_ARCH["siamese_metric"],
                         choices=("manhattan", "euclidean", "cosine", "sigmoid", "rbf"))
     parser.add_argument("--recurrent-unit",
-                        help="recurrent units used in Siamese architecture",
+                        help="recurrent units used in Siamese architecture (default {0})".format(DEFAULT_ARCH["recurrent_unit"]),
                         default=DEFAULT_ARCH["recurrent_unit"],
                         choices=("lstm", "gru"))
     parser.add_argument("--num-units",
-                        help="number of recurrent units",
-                        default=, default=DEFAULT_ARCH["num_units"],)
+                        help="number of recurrent units (default {0})".format(DEFAULT_ARCH["num_units"]),
+                        default=DEFAULT_ARCH["num_units"],)
+    parser.add_argument("--bidirectional",
+                        help="use bidirectional recurrent units (default False)", action="store_true")
 
 
-def parse_siamese_architecture_params(args):
-    """
-        parse parameters for Siamese architecture
-        
-        Args:
-        args: arguments parsed with argparse module
-        
-        Returns:
-        a dictionary with parameters
-    """
-    params = copy.deepcopy(DEFAULT_ARCH)
-    params["max_sequence_length"] = DEFAULT_ARCH["max_sequence_length"]
-    params["embedding_dim"] = DEFAULT_ARCH["embedding_dim"]
-    params["siamese_metric"] = DEFAULT_ARCH["siamese_metric"]
-    params["test_gru"] = DEFAULT_ARCH["test_gru"]
-    params["num_units"] = DEFAULT_ARCH["num_units"]
-    params["max_num_words"] = DEFAULT_ARCH["max_num_words"]
-    return params
-
-def get_model(weights, params):
+def get_model(weights, siamese_params):
     """
         return a keras model
         
         Args:
         weights: weights for word embedding
-        params: details of a siamese architecture
+        siamese_params: parameters of a siamese architecture
         
         Returns:
-        a keral model object
+        a keras model object
     """
     # parse parameters
-    num_words = params["num_words"]
-    max_sequence_length = params["max_sequence_length"]
-    embedding_dim = params["embedding_dim"]
-    recurrent_unit = params["recurrent_unit"]
-    siamese_metric = params["siamese_metric"]
-
+    num_words = siamese_params["num_words"]
+    max_sequence_length = siamese_params["max_sequence_length"]
+    embedding_dim = siamese_params["embedding_dim"]
+    recurrent_unit = siamese_params["recurrent_unit"]
+    siamese_metric = siamese_params["siamese_metric"]
+    bidirectional = siamese_params["bidirectional"]
+    
     # inputs
     input_q1 = Input(shape=(max_sequence_length,), dtype="int32")
     input_q2 = Input(shape=(max_sequence_length,), dtype="int32")
@@ -132,23 +118,26 @@ def get_model(weights, params):
     # add a shared recurrent layer
     if recurrent_unit == "lstm":
         # LSTM
-        recurrent_layer = Bidirectional(LSTM(64, dropout=0.2, recurrent_dropout=0.2))
+        recurrent_layer = LSTM(64, dropout=0.2, recurrent_dropout=0.2)
     elif recurrent_unit == "gru":
         # GRU
-        recurrent_layer = Bidirectional(GRU(64, dropout=0.2, recurrent_dropout=0.2))
+        recurrent_layer = GRU(64, dropout=0.2, recurrent_dropout=0.2)
     else:
         raise ValueError("recurrent unit {0} is not supported".format(recurrent_unit))
+
+    if bidirectional:
+        recurrent_layer = Bidirectional(recurrent_layer)
+
     q1_recurrent = recurrent_layer(q1)
     q2_recurrent = recurrent_layer(q2)
 
     # calculate a similarity
     pred = Merge(mode=similarity(siamese_metric), output_shape=lambda x: (x[0][0], 1))([q1_recurrent, q2_recurrent])
-
+    
     # compile a model
     model = Model(inputs=[input_q1, input_q2], outputs=pred)
     model.compile(loss=_logloss, optimizer='adam', metrics=['accuracy', _logloss])
     return model
-
 
 def _logloss(y_true, y_pred):
     """
@@ -259,7 +248,7 @@ def transform_tokenizer(df, tk, max_sequence_length):
     return np.array(q1), np.array(q2), df.is_duplicate.values
 
 
-def fit(df, outfile, df_test, weights, epochs, batch_size, pretrained, params):
+def fit(df, outfile, df_test, weights, dnn_train_params, siamese_params):
     """
         train a Siamese architecture with a recurrent layer
         
@@ -271,7 +260,12 @@ def fit(df, outfile, df_test, weights, epochs, batch_size, pretrained, params):
         Returns:
         a trained xgboost model object
     """
-    siamese_model = get_model(weights, params)
+    # parse parameters
+    epochs = dnn_train_params["epochs"]
+    batch_size = dnn_train_params["batch_size"]
+    pretraind = dnn_train_params["pretrained"]
+    
+    siamese_model = get_model(weights, siamese_params)
     siamese_model.summary()
     model_checkpoint = ModelCheckpoint(outfile, monitor='loss', save_best_only=True)
     
@@ -279,9 +273,9 @@ def fit(df, outfile, df_test, weights, epochs, batch_size, pretrained, params):
         siamese_model.load_weights(pretrained)
     
     model.fit(train[:2], train[2], batch_size=batch_size,
-                  epochs=epochs, verbose=1, shuffle=True,
-                  callbacks=[model_checkpoint],
-                  validation_data=(dev[:2], dev[2]))
+              epochs=epochs, verbose=1, shuffle=True,
+              callbacks=[model_checkpoint],
+              validation_data=(dev[:2], dev[2]))
     return model
 
 
@@ -313,7 +307,7 @@ def predict(siamese_model, data, outpath, is_submission=False):
         df_pred.to_csv(outpath, index=False)
 
 
-def siamese_evaluation(df_train, df_dev, df_val, outdir, epochs, batch_size, pretrained, nprocs, params):
+def siamese_evaluation(df_train, df_dev, df_val, outdir, nprocs, dnn_train_params, siamese_params):
     """
         evaluate a siamese architecture for a semantic sentence similarity task
         
@@ -345,10 +339,11 @@ def siamese_evaluation(df_train, df_dev, df_val, outdir, epochs, batch_size, pre
     val = transform_tokenizer(df_val, tokenizer, max_sequence_length)
 
     # load glove weights used in word embedding
-    weights = load_weights(GLOVE_FILE, tokenizer, max_num_words, embedding_dim):
+    weights = load_weights(GLOVE_FILE, tokenizer, max_num_words, embedding_dim)
     
     # train a model
-    siamese_model = fit(train, os.path.join(outdir, "siamese_model.out"), dev, weights, epochs, batch_size, pretrained, params)
+    siamese_model = fit(train, os.path.join(outdir, "siamese_model.out"), dev, weights, dnn_train_params, siamese_params)
+
     
     # predict
     predict(siamese_model, dev, os.path.join(outdir, "development.csv"))
@@ -357,11 +352,18 @@ def siamese_evaluation(df_train, df_dev, df_val, outdir, epochs, batch_size, pre
 
 def main(argv):
     args=parse_args(argv)
+    
+    # parse datasets
     df_train = pd.read_csv(args.train)
     df_dev = pd.read_csv(args.dev)
     df_val = pd.read_csv(args.val)
-    siamese_evaluation(df_train, df_dev, df_val, args.outdir, epochs, batch_size, pretrained, args.nprocs, parse_siamese_architecture_params(args))
-
+    
+    # parse parameters
+    siamese_params = utils.parse_args_to_dict(args, DEFAULT_ARCH.keys())
+    dnn_train_params = utils.parse_args_to_dict(args, args_common.DEFAULT_DNN_TRAIN.keys())
+    
+    # evaluate
+    siamese_evaluation(df_train, df_dev, df_val, args.outdir, args.nprocs, dnn_train_params, siamese_params)
 
 if __name__ == '__main__':
     exit(main(sys.argv[1:]))

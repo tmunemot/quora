@@ -29,6 +29,7 @@ def parse_args(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     args_common.add_evaluation_args(parser)
     # TODO: add an option for xgboost hyperparameters
+    # TODO: support multithread
     return parser.parse_args(argv)
 
 
