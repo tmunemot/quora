@@ -258,7 +258,7 @@ def fit(train, outfile, dev, weights, dnn_train_params, siamese_params):
     pretrained = dnn_train_params["pretrained"]
     
     siamese_model = get_model(weights, siamese_params)
-    #siamese_model.summary()
+    siamese_model.summary()
     model_checkpoint = ModelCheckpoint(outfile, monitor='loss', save_best_only=True)
     
     if pretrained is not None:
@@ -276,29 +276,30 @@ def fit(train, outfile, dev, weights, dnn_train_params, siamese_params):
     return siamese_model, df_history
 
 
-def predict(siamese_model, data, outpath, is_submission=False):
+def predict(siamese_model, data, instance_ids, outpath, is_submission=False):
     """
         make predictions with a trained Siamese model
         
         Args:
         siamese_model: a trained keras model
-        data_arrays: numpy arrays that holds train data
+        data: numpy arrays that holds train data
         outpath: output file path
         is_submission: a flag to indicate the data is for submission
         
         Returns:
         None
     """
-    y_pred = siamese_model.predict(test[:2], verbose=0)
+    y_pred = siamese_model.predict(list(data[:2]), verbose=0)
     if not is_submission:
-        df_pred = utils.create_prediction_df(y, y_pred, df["id"].values)
+        y = data[-1]
+        df_pred = utils.create_prediction_df(y, y_pred, instance_ids)
         df_pred.to_csv(outpath, index=False)
         df_metrics, conf = utils.metrics(y, y_pred)
         print df_metrics
         df_metrics.to_csv(outpath[:-4] + "_metrics.csv", index=False)
     else:
         # prediction for a submission
-        df_id = pd.DataFrame(df["id"].values, columns=["test_id"])
+        df_id = pd.DataFrame(instance_ids, columns=["test_id"])
         df_proba = pd.DataFrame(y_pred, columns=["is_duplicate"])
         df_pred = pd.concat([df_id, df_proba], axis=1)
         df_pred.to_csv(outpath, index=False)
@@ -341,8 +342,8 @@ def siamese_evaluation(df_train, df_dev, df_val, outdir, nprocs, dnn_train_param
     df_history.to_csv(os.path.join(outdir, "history.csv"), index=False)
 
     # predict
-    predict(siamese_model, dev, os.path.join(outdir, "development.csv"))
-    predict(siamese_model, val, os.path.join(outdir, "validation.csv"))
+    predict(siamese_model, dev, df_dev["id"].values, os.path.join(outdir, "development.csv"))
+    predict(siamese_model, val, df_val["id"].values, os.path.join(outdir, "validation.csv"))
 
 
 def main(argv):

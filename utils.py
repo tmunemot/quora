@@ -8,6 +8,8 @@ import sklearn.metrics
 import numpy as np
 import pandas as pd
 import mmap
+from collections import OrderedDict
+from keras import backend as K
 
 def mkdir_p(path):
     """
@@ -116,7 +118,7 @@ def metrics(y, y_score):
     values["auc"] = sklearn.metrics.roc_auc_score(y, y_score)
     values["average_precision"] = sklearn.metrics.average_precision_score(y, y_score)
     values["brier_score_loss"] = sklearn.metrics.brier_score_loss(y, y_score)
-    values["log_loss"] = sklearn.metrics.log_loss(y, y_score, eps=_EPSILON)
+    values["log_loss"] = sklearn.metrics.log_loss(y, y_score, eps=K.epsilon())
     df_metrics = pd.DataFrame.from_dict([values])
     conf = sklearn.metrics.confusion_matrix(y, y_pred).astype(int)
     return df_metrics, conf
