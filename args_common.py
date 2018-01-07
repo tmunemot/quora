@@ -1,5 +1,9 @@
 #!/usr/bin/env python
-
+""" commonly used arguments and functions to parse them
+"""
+import multiprocessing
+import pandas as pd
+import utils
 
 def add_evaluation_args(parser):
     """
@@ -15,11 +19,43 @@ def add_evaluation_args(parser):
     parser.add_argument("val", help="validation data")
     parser.add_argument("dev", help="development data used during training")
     parser.add_argument("outdir", help="output directory")
+    parser.add_argument("--nprocs", help="number of preprocesses",
+                        type=int,
+                        default=multiprocessing.cpu_count())
 
 
-def add_dnn_train_args(parser):
+def process_evaluation_args(args):
     """
-        add arguments for training a model
+        process arguments for a basic evaluation
+        
+        Args:
+        args: arguments loaded with a parser
+        
+        Returns:
+        dataframe objects
+    """
+    
+    # load dataframes
+    df_train = pd.read_csv(args.train)
+    df_dev = pd.read_csv(args.dev)
+    df_val = pd.read_csv(args.val)
+    
+    # create an output directory
+    utils.mkdir_p(args.outdir)
+    
+    return df_train, df_dev, df_val
+
+
+DEFAULT_DNN_TRAIN={
+    "epochs": 60,
+    "batch_size": 128,
+    "pretrained": None,
+}
+
+
+def add_dnn_train_group(parser):
+    """
+        add arguments for training a deep learning model
         
         Args:
         parser: arguments parsed with argparse module
@@ -27,12 +63,29 @@ def add_dnn_train_args(parser):
         Returns:
         None
     """
-    parser.add_argument("--epochs", help="number of epochs", type=int, default=60)
-    parser.add_argument("--batch-size", help="batch size", type=int, default=128)
-    parser.add_argument("--pretrained", help="path to a pretrained model")
-    parser.add_argument("--nprocs", help="number of preprocesses", type=int, default=15)
+    group = parser.add_argument_group("general arguments for training a deep learning model")
+    group.add_argument("--epochs", help="number of epochs",
+                       type=int,
+                       default=DEFAULT_DNN_TRAIN["epochs"])
+    group.add_argument("--batch-size", help="batch size",
+                       type=int, default=DEFAULT_DNN_TRAIN["batch_size"])
+    group.add_argument("--pretrained", help="path to a pretrained model")
 
-# TODO
-#def parse_dnn_train_args(args):
 
+def parse_args_to_dict(args, args_list):
+    """
+        parse arguments
+        
+        Args:
+        args: arguments parsed with argparse module
+        args_list: specify which arguments needs to be in output
+        
+        Returns:
+        a dictionary of parameters
+        """
+    params = {}
+    for arg in vars(args):
+        if arg in args_list:
+            params[arg] = getattr(args, arg)
+    return params
 

@@ -29,24 +29,6 @@ def mkdir_p(path):
             raise
 
 
-def parse_args_to_dict(args, args_list):
-    """
-        parse arguments
-        
-        Args:
-        args: arguments parsed with argparse module
-        args_list: specify which arguments needs to be in output
-        
-        Returns:
-        a dictionary of parameters
-        """
-    params = {}
-    for arg in vars(args):
-        if arg in args_list:
-            params[arg] = getattr(args, arg)
-    return params
-
-
 def notify(section, dlen=75):
     """
         an utility function for reporting processing time
