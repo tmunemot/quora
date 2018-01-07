@@ -306,18 +306,6 @@ def predict(siamese_model, data, outpath, is_submission=False):
         df_pred.to_csv(outpath, index=False)
 
 
-def wordset(dfs):
-    s = set()
-    for df in dfs:
-        q1 = df.question1.values
-        q2 = df.question2.values
-        for sentence in q1:
-            s.update(sentence.split())
-        for sentence in q2:
-            s.update(sentence.split())
-    print len(s)
-    return s
-
 def siamese_evaluation(df_train, df_dev, df_val, outdir, nprocs, dnn_train_params, siamese_params):
     """
         evaluate a siamese architecture for a semantic sentence similarity task
