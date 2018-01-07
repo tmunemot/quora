@@ -195,7 +195,6 @@ def load_weights(word2vec, tokenizer, max_num_words):
     weights = np.zeros((num_words, WORD2VEC_EMBEDDING_DIM), dtype=np.float32)
     word_index = tokenizer.word_index
     for word, i in word_index.items():
-        print "{0}, {1}".format(i, word)
         if i >= num_words:
             continue
         if word in word2vec.wv:
@@ -259,7 +258,6 @@ def fit(train, outfile, dev, weights, dnn_train_params, siamese_params):
     pretrained = dnn_train_params["pretrained"]
     
     siamese_model = get_model(weights, siamese_params)
-    print "obtained model"
     #siamese_model.summary()
     model_checkpoint = ModelCheckpoint(outfile, monitor='loss', save_best_only=True)
     
