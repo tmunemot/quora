@@ -15,6 +15,7 @@ import pandas as pd
 import gensim
 import time
 import tqdm
+import logging
 from collections import OrderedDict
 
 from keras.models import Model
@@ -29,6 +30,7 @@ import args_common
 import utils
 
 K.set_learning_phase(1)
+logging.getLogger("tensorflow").disabled=True
 
 SIMIRALITY_RBF_GAMMA = 1.0
 WORD2VEC_EMBEDDING_DIM = 300
@@ -173,10 +175,10 @@ def similarity(metric):
     
     if metric == "manhattan":
         # exp (-L1(x0, x1))
-        return lambda x: K.exp(-1 * K.abs(K.sum(x[0]-x[1], axis=-1)))
+        return lambda x: K.exp(-1 * K.sum(K.abs(x[0]-x[1]), axis=-1))
     elif metric == "euclidean":
         # exp (-L2(x0, x1))
-        return lambda x: K.exp(-1 * K.sqrt(K.sum((x[0] - x[1]) ** 2.0, axis=-1)))
+        return lambda x: K.exp(-1 * K.sqrt(K.sum((x[0] - x[1]) ** 2.0), axis=-1))
     elif metric == "cosine":
         # x0'x1 / sqrt(x0'*x0 * x1'*x1)
         return lambda x: dot(x[0], x[1]) / K.sqrt(dot(x[0], x[0]) * dot(x[1], x[1]))
@@ -329,6 +331,8 @@ def siamese_evaluation(df_train, df_dev, df_val, outdir, nprocs, dnn_train_param
     print "done ({0} sec)".format(round(time.time() - t))
 
     # train tokenizer and apply to dataframes
+    df_train.question1.fillna("", inplace=True)
+    df_train.question2.fillna("", inplace=True)
     tokenizer = fit_tokenizer(df_train, max_num_words)
     train = transform_tokenizer(df_train, tokenizer, max_sequence_length)
     dev = transform_tokenizer(df_dev, tokenizer, max_sequence_length)
