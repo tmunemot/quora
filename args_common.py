@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """ commonly used arguments and functions to parse them
 """
+import os
 import multiprocessing
 import pandas as pd
 import utils
@@ -50,6 +51,7 @@ DEFAULT_DNN_TRAIN={
     "epochs": 60,
     "batch_size": 128,
     "pretrained": None,
+    "cuda_visible_devices": -1,
 }
 
 
@@ -70,6 +72,7 @@ def add_dnn_train_group(parser):
     group.add_argument("--batch-size", help="batch size",
                        type=int, default=DEFAULT_DNN_TRAIN["batch_size"])
     group.add_argument("--pretrained", help="path to a pretrained model")
+    group.add_argument("--cuda-visible-devices", help="specify a gpu to use", type=int, default=-1)
 
 
 def parse_args_to_dict(args, args_list):

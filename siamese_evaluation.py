@@ -19,7 +19,7 @@ import logging
 from collections import OrderedDict
 
 from keras.models import Model
-from keras.layers import Input, Embedding, LSTM, GRU, Bidirectional, merge
+from keras.layers import Input, Embedding, LSTM, GRU, Bidirectional, merge, TimeDistributed, Dense, Lambda
 from keras.callbacks import ModelCheckpoint
 from keras.preprocessing.sequence import pad_sequences
 from keras.preprocessing.text import Tokenizer
@@ -36,7 +36,7 @@ SIMIRALITY_RBF_GAMMA = 1.0
 WORD2VEC_EMBEDDING_DIM = 300
 DEFAULT_ARCH={
     "max_sequence_length": 32,
-    "siamese_metric": "manhattan",
+    "distance_metric": "manhattan",
     "recurrent_unit": "lstm",
     "num_units": 64,
     "max_num_words": 20000,
@@ -70,10 +70,10 @@ def add_siamese_architecture_group(parser):
     group.add_argument("--max-num-words",
                        help="maximum number of possible words in embedding",
                        type=int, default=DEFAULT_ARCH["max_num_words"])
-    group.add_argument("--siamese-metric",
+    group.add_argument("--distance-metric",
                        help="a distance metric used in Siamese architecture",
-                       default=DEFAULT_ARCH["siamese_metric"],
-                       choices=("manhattan", "euclidean", "cosine", "sigmoid", "rbf"))
+                       default=DEFAULT_ARCH["distance_metric"],
+                       choices=("manhattan", "euclidean", "cosine"))
     group.add_argument("--recurrent-unit",
                        help="recurrent units used in Siamese architecture",
                        default=DEFAULT_ARCH["recurrent_unit"],
@@ -101,7 +101,7 @@ def get_model(weights, siamese_params):
     num_words, embedding_dim = weights.shape
     max_sequence_length = siamese_params["max_sequence_length"]
     recurrent_unit = siamese_params["recurrent_unit"]
-    siamese_metric = siamese_params["siamese_metric"]
+    distance_metric = siamese_params["distance_metric"]
     num_units = siamese_params["num_units"]
     unidirectional = siamese_params["unidirectional"]
     
@@ -135,31 +135,15 @@ def get_model(weights, siamese_params):
     q2_recurrent = recurrent_layer(q2)
 
     # calculate a similarity
-    pred = merge([q1_recurrent, q2_recurrent], mode=similarity(siamese_metric), output_shape=lambda x: x[0])
+    distance = Lambda(get_distance_metric(distance_metric), output_shape=lambda shapes: (shapes[0][0], 1))([q1_recurrent, q2_recurrent])
 
     # compile a model
-    model = Model(inputs=[input_q1, input_q2], outputs=pred)
-    model.compile(loss=_logloss, optimizer='adam', metrics=['accuracy', _logloss])
+    model = Model(inputs=[input_q1, input_q2], outputs=distance)
+    model.compile(loss="binary_crossentropy", optimizer='adam', metrics=['accuracy'])
     return model
 
 
-def _logloss(y_true, y_pred):
-    """
-        calculate log loss
-        
-        Args:
-        y_true: target labels
-        y_pred: predicted labels
-        
-        Returns:
-        log loss
-    """
-    y_pred = K.clip(y_pred, K.epsilon(), 1.0-K.epsilon())
-    out = -(y_true * K.log(y_pred) + (1.0 - y_true) * K.log(1.0 - y_pred))
-    return K.mean(out, axis=-1)
-
-
-def similarity(metric):
+def get_distance_metric(distance_metric):
     """
         return a lambda function of a similarity metric
         
@@ -170,26 +154,18 @@ def similarity(metric):
         reference to a similarity function
     """
 
-    #axis = lambda a: len(a._keras_shape) - 1
-    dot = lambda a, b: K.batch_dot(a, b, axes=-1)
+    axis = lambda a: len(a._keras_shape) - 1
+    dot = lambda a, b: K.batch_dot(a, b, axes=axis(a))
     
-    if metric == "manhattan":
-        # exp (-L1(x0, x1))
-        return lambda x: K.exp(-1 * K.sum(K.abs(x[0]-x[1]), axis=-1))
-    elif metric == "euclidean":
-        # exp (-L2(x0, x1))
-        return lambda x: K.exp(-1 * K.sqrt(K.sum((x[0] - x[1]) ** 2.0), axis=-1))
-    elif metric == "cosine":
-        # x0'x1 / sqrt(x0'*x0 * x1'*x1)
-        return lambda x: dot(x[0], x[1]) / K.sqrt(dot(x[0], x[0]) * dot(x[1], x[1]))
-    elif metric == "sigmoid":
-        # sigmoid(x0'x1) = 0.5 * (tanh(x0'x1) + 1)
-        return lambda x: 0.5 * (K.tanh(dot(x[0], x[1])) + 1.0)
-    elif metric == "rbf":
-        # exp (- gamma * L2(x0, x1)^2)
-        return K.exp(-1 * SIMIRALITY_RBF_GAMMA * l2_norm(x[0], x[1]) ** 2.0)
+    if distance_metric == "manhattan":
+        return lambda x: K.exp(-1 * K.sum(K.abs(x[0] - x[1]), axis=1, keepdims=True))
+    elif distance_metric == "euclidean":
+        return lambda x: K.exp(-1 * K.sqrt(K.sum(K.square(x[0] - x[1]), axis=1, keepdims=True)))
+    elif distance_metric == "cosine":
+        return lambda x: 1.0 - dot(x[0], x[1]) / K.sqrt(dot(x[0], x[0]) * dot(x[1], x[1]))
     else:
-        ValueError("unexpected similarity metrics")
+        ValueError("unexpected distance metric")
+
 
 def load_weights(word2vec, tokenizer, max_num_words):
     # convert to 2d numpy array
@@ -258,6 +234,9 @@ def fit(train, outfile, dev, weights, dnn_train_params, siamese_params):
     epochs = dnn_train_params["epochs"]
     batch_size = dnn_train_params["batch_size"]
     pretrained = dnn_train_params["pretrained"]
+
+    if dnn_train_params["cuda_visible_devices"] > -1:
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(dnn_train_params["cuda_visible_devices"])
     
     siamese_model = get_model(weights, siamese_params)
     siamese_model.summary()
