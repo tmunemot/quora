@@ -19,7 +19,7 @@ import logging
 from collections import OrderedDict
 
 from keras.models import Model
-from keras.layers import Input, Embedding, LSTM, GRU, Bidirectional, merge, TimeDistributed, Dense, Lambda
+from keras.layers import Input, Embedding, LSTM, GRU, Bidirectional, merge, TimeDistributed, Dense, Lambda, Dropout, concatenate
 from keras.callbacks import ModelCheckpoint
 from keras.preprocessing.sequence import pad_sequences
 from keras.preprocessing.text import Tokenizer
@@ -28,6 +28,7 @@ from keras import backend as K
 import preprocess
 import args_common
 import utils
+import extract
 
 K.set_learning_phase(1)
 logging.getLogger("tensorflow").disabled=True
@@ -41,6 +42,7 @@ DEFAULT_ARCH={
     "num_units": 64,
     "max_num_words": 20000,
     "unidirectional": False,
+    "enable_features": False,
 }
 
 
@@ -84,6 +86,9 @@ def add_siamese_architecture_group(parser):
     group.add_argument("--unidirectional",
                        help="use unidirectional recurrent units instead of bidirectional",
                        action="store_true")
+    group.add_argument("--enable-features",
+                       help="disable input for engineered features",
+                       action="store_true")
 
 
 def get_model(weights, siamese_params):
@@ -104,10 +109,12 @@ def get_model(weights, siamese_params):
     distance_metric = siamese_params["distance_metric"]
     num_units = siamese_params["num_units"]
     unidirectional = siamese_params["unidirectional"]
+    enable_features = siamese_params["enable_features"]
     
     # inputs
     input_q1 = Input(shape=(max_sequence_length,), dtype="int32")
     input_q2 = Input(shape=(max_sequence_length,), dtype="int32")
+    inputs = [input_q1, input_q2]
 
     # untrainable embedding layer
     embedding_layer = Embedding(num_words,
@@ -137,9 +144,22 @@ def get_model(weights, siamese_params):
     # calculate a similarity
     distance = Lambda(get_distance_metric(distance_metric), output_shape=lambda shapes: (shapes[0][0], 1))([q1_recurrent, q2_recurrent])
 
+    # additional hand crafted features
+    if enable_features:
+        num_features = siamese_params["num_features"]
+        input_f = Input(shape=(num_features,), dtype="float32")
+        inputs.append(input_f)
+        f12 = Dense(64, activation="relu")(input_f)
+        f12 = Dropout(0.5)(f12)
+        f12 = Dense(32, activation="relu")(f12)
+        f12 = Dropout(0.5)(f12)
+        feature_score = Dense(1, activation="sigmoid")(f12)
+        merged = concatenate([distance, feature_score])
+        distance = Dense(1, activation="sigmoid")(merged)
+
     # compile a model
-    model = Model(inputs=[input_q1, input_q2], outputs=distance)
-    model.compile(loss="binary_crossentropy", optimizer='adam', metrics=['accuracy'])
+    model = Model(inputs=inputs, outputs=distance)
+    model.compile(loss="binary_crossentropy", optimizer="adam", metrics=["accuracy"])
     return model
 
 
@@ -168,6 +188,17 @@ def get_distance_metric(distance_metric):
 
 
 def load_weights(word2vec, tokenizer, max_num_words):
+    """
+        load a subset of word2vec weight vectors into 2d numpy array
+        
+        Args:
+        word2vec: word2vec model object
+        tokeninzer: trained tokenizer
+        max_num_words: limit the number of words used
+        
+        Returns:
+        trained tokenizer instance
+    """
     # convert to 2d numpy array
     num_words = min(len(word2vec.vocab.keys()), max_num_words)
     weights = np.zeros((num_words, WORD2VEC_EMBEDDING_DIM), dtype=np.float32)
@@ -215,7 +246,8 @@ def transform_tokenizer(df, tk, max_sequence_length):
                        padding='post', truncating='post', value=0.)
     q2 = pad_sequences(q2, maxlen=max_sequence_length, dtype='int32',
                        padding='post', truncating='post', value=0.)
-    return np.array(q1, dtype=np.int32), np.array(q2, dtype=np.int32), df.is_duplicate.values
+    out = [np.array(q1, dtype=np.int32), np.array(q2, dtype=np.int32), df.is_duplicate.values]
+    return out
 
 
 def fit(train, outfile, dev, weights, dnn_train_params, siamese_params):
@@ -245,10 +277,10 @@ def fit(train, outfile, dev, weights, dnn_train_params, siamese_params):
     if pretrained is not None:
         siamese_model.load_weights(pretrained)
     print "start training"
-    history = siamese_model.fit(list(train[:2]), train[2], batch_size=batch_size,
+    history = siamese_model.fit(train[:-1], train[-1], batch_size=batch_size,
               epochs=epochs, verbose=1, shuffle=True,
               callbacks=[model_checkpoint],
-              validation_data=(list(dev[:2]), dev[2]))
+              validation_data=(dev[:-1], dev[-1]))
 
     df_history = pd.DataFrame({"epoch": [i + 1 for i in history.epoch],
                    "acc": history.history["acc"],
@@ -270,7 +302,7 @@ def predict(siamese_model, data, instance_ids, outpath, is_submission=False):
         Returns:
         None
     """
-    y_pred = siamese_model.predict(list(data[:2]), verbose=0)
+    y_pred = siamese_model.predict(data[:-1], verbose=0)
     if not is_submission:
         y = data[-1]
         df_pred = utils.create_prediction_df(y, y_pred, instance_ids)
@@ -319,6 +351,13 @@ def siamese_evaluation(df_train, df_dev, df_val, outdir, nprocs, dnn_train_param
 
     # load word2vec weights used in word embedding
     weights = load_weights(word2vec, tokenizer, max_num_words)
+
+    if siamese_params["enable_features"]:
+        # extract features
+        extract.add_features(train, weights, nprocs)
+        extract.add_features(dev, weights, nprocs)
+        extract.add_features(val, weights, nprocs)
+        siamese_params["num_features"] = train[2].shape[1]
 
     # train a model
     siamese_model, df_history = fit(train, os.path.join(outdir, "siamese_model.out"), dev, weights, dnn_train_params, siamese_params)

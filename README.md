@@ -14,7 +14,7 @@ Python packages
 * gensim 3.2.0
 * keras 2.0.0
 * tqdm 4.11.2
-* phonenumbers 8.4.3
+* nltk 3.2.2
 
 Pretrained word embedding
 
