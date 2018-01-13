@@ -26,19 +26,17 @@ Pretrained word embedding
 
 ### How to Run
 
-Data preparation
-
 Download a training dataset from [Kaggle](https://www.kaggle.com/c/quora-question-pairs/data), uncompress it, and run the following bash command.
 
 ```
-# create validation and development datasets by randomly sampling 20000 instances from training data
+# install requirements
+sudo pip install -r requirements.txt
+
+# create validation and development datasets by randomly sampling from training data
 mkdir ./data
 ./random_split.sh -l 20000 train.csv ./data/{train,val,dev}.csv 
-```
 
-Model evaluation
-
-``` 
+# run a script to evaluate siamese recurrent architecture
 ./siamese_evaluation.py --epochs 60 --batch-size 128 \
                         --recurrent-unit lstm \
                         --distance-metric manhattan \
