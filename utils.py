@@ -78,6 +78,21 @@ def get_num_lines(file_path):
     return lines
 
 
+def split(a, n):
+    """
+        split an array into n equaly divided sub-arrays
+        
+        Args:
+        a: list
+        n: number of sub-arrays
+        
+        Returns:
+        sub-arrays
+    """
+    k, m = divmod(len(a), n)
+    return (a[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in xrange(n))
+
+
 def create_prediction_df(y, y_proba, ids):
     """
         create a dataframe that contians predictions
