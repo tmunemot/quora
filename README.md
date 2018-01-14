@@ -26,22 +26,20 @@ Pretrained word embedding
 
 ### How to Run
 
-Download a training dataset from [Kaggle](https://www.kaggle.com/c/quora-question-pairs/data), uncompress it, and run the following bash command.
+Make sure all requirements are installed. Download [a training dataset](https://www.kaggle.com/c/quora-question-pairs/data) and uncompress it. Also, place a pretrained word2vec embedding, `GoogleNews-vectors-negative300.bin`, under resource directory and run below commands.
 
 ```
-# install requirements
-sudo pip install -r requirements.txt
+# create validation and development datasets by randomly sampling 20000 instances
+./random_split.sh -l 20000 train.csv train_remain.csv ./validation.csv ./development.csv
 
-# create validation and development datasets by randomly sampling from training data
-mkdir ./data
-./random_split.sh -l 20000 train.csv ./data/{train,val,dev}.csv 
-
-# run a script to evaluate siamese recurrent architecture
-./siamese_evaluation.py --epochs 60 --batch-size 128 \
+# evaluate siamese recurrent architecture
+./siamese_evaluation.py --epochs 60 \
+                        --batch-size 128 \
                         --recurrent-unit lstm \
                         --distance-metric manhattan \
                         --num-units 64 \
-                        ./data/{train,val,dev}.csv ./results
+                        train_remain.csv validation.csv development.csv \
+                        ./outdir
 ```
 
 ### References
