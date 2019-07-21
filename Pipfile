@@ -1,0 +1,23 @@
+[[source]]
+name = "pypi"
+url = "https://pypi.org/simple"
+verify_ssl = true
+
+[dev-packages]
+
+[packages]
+numpy = "*"
+matplotlib = "*"
+tqdm = "*"
+nltk = "*"
+gensim = "*"
+tensorflow = {version = "*",platform_system = "== 'Darwin'"}
+tensorflow-gpu = {version = "*",platform_system = "== 'Linux'"}
+keras = "*"
+kaggle = "*"
+
+[requires]
+python_version = "3.7"
+
+[scripts]
+download = "bash download.sh"
