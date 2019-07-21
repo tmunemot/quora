@@ -1,50 +1,47 @@
 #!/usr/bin/env python
-""" evaluate Siamese recurrent architecture for Quora question pairs challenge
+""" evaluate Siamese recurrent architectures for Quora question pairs challenge
 
     Reference:
     Jonas  Mueller, Aditya Thyagarajan. "Siamese Recurrent Architecture for Learning Sentence Similarity" Proceedings of the Thirtieth AAAI Conference on Artificial Intelligence, 2016
     https://pdfs.semanticscholar.org/72b8/9e45e8ad8b44bdcab524b959dc09bf63eb1e.pdf
 
 """
-import sys
-import os
 import argparse
+from collections import OrderedDict
 import copy
+import logging
+import os
+import sys
+import time
+
+import gensim
 import numpy as np
 import pandas as pd
-import gensim
-import time
+import tensorflow as tf
 import tqdm
-import logging
-from collections import OrderedDict
-
-from keras.models import Model
-from keras.layers import Input, Embedding, LSTM, GRU, Bidirectional, merge, TimeDistributed, Dense, Lambda, Dropout, concatenate
-from keras.callbacks import ModelCheckpoint
-from keras.preprocessing.sequence import pad_sequences
-from keras.preprocessing.text import Tokenizer
-from keras import backend as K
 
 import preprocess
 import args_common
 import utils
 import extract
 
-K.set_learning_phase(1)
-logging.getLogger("tensorflow").disabled = True
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, Embedding, LSTM, GRU, Bidirectional, TimeDistributed, Dense, Lambda, Dropout, concatenate
+from tensorflow.keras.callbacks import ModelCheckpoint
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras import backend as K
 
-SIMIRALITY_RBF_GAMMA = 1.0
 WORD2VEC_EMBEDDING_DIM = 300
 DEFAULT_ARCH = {
     "max_sequence_length": 32,
-    "distance_metric": "manhattan",
+    "distance_metric": "euclidean",
     "recurrent_unit": "lstm",
     "num_units": 64,
     "max_num_words": 20000,
     "unidirectional": False,
     "enable_features": False,
 }
-
 
 def parse_args(argv):
     parser = argparse.ArgumentParser(description=__doc__,
@@ -116,7 +113,7 @@ def get_model(weights, siamese_params):
     input_q1 = Input(shape=(max_sequence_length,), dtype="int32")
     input_q2 = Input(shape=(max_sequence_length,), dtype="int32")
     inputs = [input_q1, input_q2]
-    
+
     # untrainable embedding layer
     embedding_layer = Embedding(num_words,
                                 embedding_dim,
@@ -143,7 +140,7 @@ def get_model(weights, siamese_params):
     q1_recurrent = recurrent_layer(q1)
     q2_recurrent = recurrent_layer(q2)
 
-    # calculate a similarity
+    # calculate similarity
     distance = Lambda(get_distance_metric(distance_metric), output_shape=lambda shapes: (
         shapes[0][0], 1))([q1_recurrent, q2_recurrent])
 
@@ -251,13 +248,13 @@ def transform_tokenizer(df, tk, max_sequence_length):
     q2 = pad_sequences(q2, maxlen=max_sequence_length, dtype='int32',
                        padding='post', truncating='post', value=0.)
     out = [np.array(q1, dtype=np.int32), np.array(
-        q2, dtype=np.int32), df.is_duplicate.values]
+        q2, dtype=np.int32), np.array(df.is_duplicate.values, dtype=np.float32)]
     return out
 
 
 def fit(train, outfile, dev, weights, dnn_train_params, siamese_params):
     """
-        train a Siamese architecture with a recurrent layer
+        train a Siamese architecture model
 
         Args:
         df: training data
@@ -265,7 +262,7 @@ def fit(train, outfile, dev, weights, dnn_train_params, siamese_params):
         df_test: data used for early stopping
 
         Returns:
-        a trained xgboost model object
+        a trained model object
     """
     # parse parameters
     epochs = dnn_train_params["epochs"]

@@ -16,6 +16,8 @@ import multiprocessing
 import ctypes
 
 from collections import OrderedDict
+import nltk
+nltk.download('stopwords')
 from nltk import ngrams
 from nltk.corpus import stopwords
 

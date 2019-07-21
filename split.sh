@@ -51,26 +51,26 @@ remainder=${@:$OPTIND:1}
 samples=(${@:$OPTIND+1:$#})
 rsc=$(pipenv --where)/resource
 
-if [ ! -f "$rsc/train.csv.zip" ]; then
-    echo failed to load train.csv.zip 
+if [ ! -f "$rsc/quora-question-pairs.zip" ]; then
+    echo quora-question-pairs.zip does not exist
     exit 1
 else
-    unzip $rsc/train.csv.zip -d $rsc
-
+    unzip $rsc/quora-question-pairs.zip -d $rsc
+    chmod 766 $rsc/*.csv
     # copy contents to a temporary file
     header=$(head -1 $rsc/train.csv)
     tempfile=$(mktemp)
     trap "rm -f $tempfile" EXIT
     if [[ $(uname) == 'Linux' ]]; then
         tail -n +2 $rsc/train.csv | shuf > ${tempfile}
-	rm $rsc/train.csv
+	rm $rsc/*.csv
     elif [[ $(uname) == 'Darwin' ]]; then
         if [[ -z $(command -v gshuf) ]]; then
             echo "missing gshuf. install coreutils" >&2
             exit 1
         fi
         tail -n +2 $rsc/train.csv | gshuf > ${tempfile}
-	rm $rsc/train.csv
+	rm $rsc/*.csv
     else
         echo "only linux and macOS are supported" >&2
         exit 1

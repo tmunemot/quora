@@ -1,46 +1,57 @@
 ## Quora Question Pairs
 
-This repository contains scripts used in [Quora Question Pairs](https://www.kaggle.com/c/quora-question-pairs#description) competition. The competition is about building a natural language processing solution that flags duplicated questions posted on Quora.
+This repository contains scripts used for [Quora question pairs competition](https://www.kaggle.com/c/quora-question-pairs#description). The goal of the challenge is to build a natural language processing solution that automatically flags duplicated questions posted to Quora.
 
 ### Dependencies
-Python 2.7
+Python 3.7
 
 Python packages
 
-* numpy 1.13.3
-* scipy 1.0.0
-* pandas 0.19.2
-* sklearn 0.18.1
-* gensim 3.2.0
-* keras 2.0.0
-* tqdm 4.11.2
-* nltk 3.2.2
-
-Pretrained word embedding
-
-* [Word2Vec](https://code.google.com/archive/p/word2vec)
-* [GloVe](https://nlp.stanford.edu/projects/glove)
+* numpy
+* scipy
+* pandas
+* sklearn
+* gensim
+* keras
+* tqdm
+* nltk
+* tensorflow-gpu (==2.1.0rc0)
 
 ### Siamese Recurrent Architecture
 ![architecture](https://raw.githubusercontent.com/tmunemot/quora/master/resource/model.png)
 
 ### How to Run
 
-Make sure all requirements are installed. Download [a training dataset](https://www.kaggle.com/c/quora-question-pairs/data) and uncompress it. Also, place a pretrained word2vec embedding, `GoogleNews-vectors-negative300.bin`, under resource directory and run below commands.
+```
+# clone repositry
+git clone https://github.com/tmunemot/quora.git
+cd quora
+
+# install dependencies
+pipenv install
+pipenv shell
+```
+
+Once you've successfully set up a virtual environment, run `sync.sh`. This script attempts to download the competition dataset via [kaggle API](https://github.com/Kaggle/kaggle-api). Please refer to the API credential section in the link if you haven't used the api previously. The command also downloads [a pretrained word embedding](https://code.google.com/archive/p/word2vec) with rsync. This is a word2vec model that captures linguistic regularities found in Google News articles.
+
+`split.sh` randomly samples subsets from training data without replacement. `siemese_evaluation.py` is a main python script for training a model.
 
 ```
-# create validation and development datasets by randomly sampling 20000 instances
-./random_split.sh -l 20000 train.csv train_remain.csv ./validation.csv ./development.csv
+# download data and a word embedding
+./sync.sh
+
+# sample validation and development datasets
+./split.sh -l 20000 train.csv validation.csv development.csv
 
 # evaluate siamese recurrent architecture
-./siamese_evaluation.py --epochs 60 \
-                        --batch-size 128 \
-                        --recurrent-unit lstm \
-                        --distance-metric manhattan \
-                        --num-units 64 \
-                        train_remain.csv validation.csv development.csv \
-                        ./outdir
+python siamese_evaluation.py --epochs 60 \
+                              --batch-size 128 \
+                              --recurrent-unit lstm \
+                              --distance-metric euclidean \
+                              --num-units 64 \
+                              train.csv validation.csv development.csv \
+                              ./outdir
 ```
 
-### References
+### Reference
 Jonas  Mueller, Aditya Thyagarajan. "Siamese Recurrent Architecture for Learning Sentence Similarity" Proceedings of the Thirtieth AAAI Conference on Artificial Intelligence, 2016 [\[pdf\]](https://pdfs.semanticscholar.org/72b8/9e45e8ad8b44bdcab524b959dc09bf63eb1e.pdf)
