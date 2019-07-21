@@ -31,11 +31,11 @@ import utils
 import extract
 
 K.set_learning_phase(1)
-logging.getLogger("tensorflow").disabled=True
+logging.getLogger("tensorflow").disabled = True
 
 SIMIRALITY_RBF_GAMMA = 1.0
 WORD2VEC_EMBEDDING_DIM = 300
-DEFAULT_ARCH={
+DEFAULT_ARCH = {
     "max_sequence_length": 32,
     "distance_metric": "manhattan",
     "recurrent_unit": "lstm",
@@ -58,14 +58,15 @@ def parse_args(argv):
 def add_siamese_architecture_group(parser):
     """
         add arguments for Siamese architecture
-        
+
         Args:
         parser: arguments parsed with argparse module
-        
+
         Returns:
         None
     """
-    group = parser.add_argument_group("arguments for Siamese recurrent architecture")
+    group = parser.add_argument_group(
+        "arguments for Siamese recurrent architecture")
     group.add_argument("--max-sequence-length",
                        help="maximum length of each question",
                        type=int, default=DEFAULT_ARCH["max_sequence_length"])
@@ -94,11 +95,11 @@ def add_siamese_architecture_group(parser):
 def get_model(weights, siamese_params):
     """
         return a keras model
-        
+
         Args:
         weights: weights for word embedding
         siamese_params: parameters of a siamese architecture
-        
+
         Returns:
         a keras model object
     """
@@ -110,7 +111,7 @@ def get_model(weights, siamese_params):
     num_units = siamese_params["num_units"]
     unidirectional = siamese_params["unidirectional"]
     enable_features = siamese_params["enable_features"]
-    
+
     # inputs
     input_q1 = Input(shape=(max_sequence_length,), dtype="int32")
     input_q2 = Input(shape=(max_sequence_length,), dtype="int32")
@@ -124,7 +125,7 @@ def get_model(weights, siamese_params):
                                 trainable=False)
     q1 = embedding_layer(input_q1)
     q2 = embedding_layer(input_q2)
-    
+
     # add a shared recurrent layer
     if recurrent_unit == "lstm":
         # LSTM
@@ -133,7 +134,8 @@ def get_model(weights, siamese_params):
         # GRU
         recurrent_layer = GRU(num_units, dropout=0.2, recurrent_dropout=0.2)
     else:
-        raise ValueError("recurrent unit {0} is not supported".format(recurrent_unit))
+        raise ValueError(
+            "recurrent unit {0} is not supported".format(recurrent_unit))
 
     if not unidirectional:
         recurrent_layer = Bidirectional(recurrent_layer)
@@ -142,7 +144,8 @@ def get_model(weights, siamese_params):
     q2_recurrent = recurrent_layer(q2)
 
     # calculate a similarity
-    distance = Lambda(get_distance_metric(distance_metric), output_shape=lambda shapes: (shapes[0][0], 1))([q1_recurrent, q2_recurrent])
+    distance = Lambda(get_distance_metric(distance_metric), output_shape=lambda shapes: (
+        shapes[0][0], 1))([q1_recurrent, q2_recurrent])
 
     # additional hand crafted features
     if enable_features:
@@ -159,24 +162,25 @@ def get_model(weights, siamese_params):
 
     # compile a model
     model = Model(inputs=inputs, outputs=distance)
-    model.compile(loss="binary_crossentropy", optimizer="adam", metrics=["accuracy"])
+    model.compile(loss="binary_crossentropy",
+                  optimizer="adam", metrics=["accuracy"])
     return model
 
 
 def get_distance_metric(distance_metric):
     """
         return a lambda function of a similarity metric
-        
+
         Args:
         metric_id: an identifier string
-        
+
         Returns:
         reference to a similarity function
     """
 
-    axis = lambda a: len(a._keras_shape) - 1
-    dot = lambda a, b: K.batch_dot(a, b, axes=axis(a))
-    
+    def axis(a): return len(a._keras_shape) - 1
+    def dot(a, b): return K.batch_dot(a, b, axes=axis(a))
+
     if distance_metric == "manhattan":
         return lambda x: K.exp(-1 * K.sum(K.abs(x[0] - x[1]), axis=1, keepdims=True))
     elif distance_metric == "euclidean":
@@ -190,12 +194,12 @@ def get_distance_metric(distance_metric):
 def load_weights(word2vec, tokenizer, max_num_words):
     """
         load a subset of word2vec weight vectors into 2d numpy array
-        
+
         Args:
         word2vec: word2vec model object
         tokeninzer: trained tokenizer
         max_num_words: limit the number of words used
-        
+
         Returns:
         trained tokenizer instance
     """
@@ -214,11 +218,11 @@ def load_weights(word2vec, tokenizer, max_num_words):
 def fit_tokenizer(df_train, max_num_words):
     """
         train a tokenizer
-        
+
         Args:
         df_train: training data
         max_num_words: limit the number of words used
-        
+
         Returns:
         trained tokenizer instance
     """
@@ -231,12 +235,12 @@ def fit_tokenizer(df_train, max_num_words):
 def transform_tokenizer(df, tk, max_sequence_length):
     """
         transform question sentences with a trained tokenizer
-        
+
         Args:
         df: dataframe
         tk: trained tokenizer
         max_sequence_length: limit the length of sentence
-        
+
         Returns:
         two dimensional numpy arrays and class labels
     """
@@ -246,19 +250,20 @@ def transform_tokenizer(df, tk, max_sequence_length):
                        padding='post', truncating='post', value=0.)
     q2 = pad_sequences(q2, maxlen=max_sequence_length, dtype='int32',
                        padding='post', truncating='post', value=0.)
-    out = [np.array(q1, dtype=np.int32), np.array(q2, dtype=np.int32), df.is_duplicate.values]
+    out = [np.array(q1, dtype=np.int32), np.array(
+        q2, dtype=np.int32), df.is_duplicate.values]
     return out
 
 
 def fit(train, outfile, dev, weights, dnn_train_params, siamese_params):
     """
         train a Siamese architecture with a recurrent layer
-        
+
         Args:
         df: training data
         outfile: output file path
         df_test: data used for early stopping
-        
+
         Returns:
         a trained xgboost model object
     """
@@ -268,37 +273,39 @@ def fit(train, outfile, dev, weights, dnn_train_params, siamese_params):
     pretrained = dnn_train_params["pretrained"]
 
     if dnn_train_params["cuda_visible_devices"] > -1:
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(dnn_train_params["cuda_visible_devices"])
-    
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(
+            dnn_train_params["cuda_visible_devices"])
+
     siamese_model = get_model(weights, siamese_params)
     siamese_model.summary()
-    model_checkpoint = ModelCheckpoint(outfile, monitor='loss', save_best_only=True)
-    
+    model_checkpoint = ModelCheckpoint(
+        outfile, monitor='loss', save_best_only=True)
+
     if pretrained is not None:
         siamese_model.load_weights(pretrained)
-    print "start training"
+    print("start training")
     history = siamese_model.fit(train[:-1], train[-1], batch_size=batch_size,
-              epochs=epochs, verbose=1, shuffle=True,
-              callbacks=[model_checkpoint],
-              validation_data=(dev[:-1], dev[-1]))
+                                epochs=epochs, verbose=1, shuffle=True,
+                                callbacks=[model_checkpoint],
+                                validation_data=(dev[:-1], dev[-1]))
 
     df_history = pd.DataFrame({"epoch": [i + 1 for i in history.epoch],
-                   "acc": history.history["acc"],
-                   "validation": history.history["val_acc"]})
-    
+                               "acc": history.history["acc"],
+                               "validation": history.history["val_acc"]})
+
     return siamese_model, df_history
 
 
 def predict(siamese_model, data, instance_ids, outpath, is_submission=False):
     """
         make predictions with a trained Siamese model
-        
+
         Args:
         siamese_model: a trained keras model
         data: numpy arrays that holds train data
         outpath: output file path
         is_submission: a flag to indicate the data is for submission
-        
+
         Returns:
         None
     """
@@ -308,7 +315,7 @@ def predict(siamese_model, data, instance_ids, outpath, is_submission=False):
         df_pred = utils.create_prediction_df(y, y_pred, instance_ids)
         df_pred.to_csv(outpath, index=False)
         df_metrics, conf = utils.metrics(y, y_pred)
-        print df_metrics
+        print(df_metrics)
         df_metrics.to_csv(outpath[:-4] + "_metrics.csv", index=False)
     else:
         # prediction for a submission
@@ -321,25 +328,26 @@ def predict(siamese_model, data, instance_ids, outpath, is_submission=False):
 def siamese_evaluation(df_train, df_dev, df_val, outdir, nprocs, dnn_train_params, siamese_params):
     """
         evaluate a siamese architecture for a semantic sentence similarity task
-        
+
         Args:
         df_train: training data
         df_val: development data used during training
         df_eval: evaluation data
         outdir: output directory
-        
+
         Returns:
         None
     """
     # parse parameters
     max_num_words = siamese_params["max_num_words"]
     max_sequence_length = siamese_params["max_sequence_length"]
-    
+
     # load word2vec
-    print "loading {0}".format(os.path.basename(preprocess.WORD2VEC_FILE))
+    print("loading {0}".format(os.path.basename(preprocess.WORD2VEC_FILE)))
     t = time.time()
-    word2vec = gensim.models.KeyedVectors.load_word2vec_format(preprocess.WORD2VEC_FILE, binary=True)
-    print "done ({0} sec)".format(round(time.time() - t))
+    word2vec = gensim.models.KeyedVectors.load_word2vec_format(
+        preprocess.WORD2VEC_FILE, binary=True)
+    print("done ({0} sec)".format(round(time.time() - t)))
 
     # train tokenizer and apply to dataframes
     df_train.question1.fillna("", inplace=True)
@@ -360,26 +368,32 @@ def siamese_evaluation(df_train, df_dev, df_val, outdir, nprocs, dnn_train_param
         siamese_params["num_features"] = train[2].shape[1]
 
     # train a model
-    siamese_model, df_history = fit(train, os.path.join(outdir, "siamese_model.out"), dev, weights, dnn_train_params, siamese_params)
+    siamese_model, df_history = fit(train, os.path.join(
+        outdir, "siamese_model.out"), dev, weights, dnn_train_params, siamese_params)
     df_history.to_csv(os.path.join(outdir, "history.csv"), index=False)
 
     # predict
-    predict(siamese_model, dev, df_dev["id"].values, os.path.join(outdir, "development.csv"))
-    predict(siamese_model, val, df_val["id"].values, os.path.join(outdir, "validation.csv"))
+    predict(siamese_model, dev, df_dev["id"].values, os.path.join(
+        outdir, "development.csv"))
+    predict(siamese_model, val, df_val["id"].values, os.path.join(
+        outdir, "validation.csv"))
 
 
 def main(argv):
-    args=parse_args(argv)
-    
+    args = parse_args(argv)
+
     # parse datasets
     df_train, df_dev, df_val = args_common.process_evaluation_args(args)
-    
+
     # parse parameters
     siamese_params = args_common.parse_args_to_dict(args, DEFAULT_ARCH.keys())
-    dnn_train_params = args_common.parse_args_to_dict(args, args_common.DEFAULT_DNN_TRAIN.keys())
-    
+    dnn_train_params = args_common.parse_args_to_dict(
+        args, args_common.DEFAULT_DNN_TRAIN.keys())
+
     # evaluate
-    siamese_evaluation(df_train, df_dev, df_val, args.outdir, args.nprocs, dnn_train_params, siamese_params)
+    siamese_evaluation(df_train, df_dev, df_val, args.outdir,
+                       args.nprocs, dnn_train_params, siamese_params)
+
 
 if __name__ == '__main__':
     exit(main(sys.argv[1:]))

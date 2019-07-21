@@ -4,6 +4,8 @@ url = "https://pypi.org/simple"
 verify_ssl = true
 
 [dev-packages]
+autopep8 = "*"
+flake8 = "*"
 
 [packages]
 numpy = "*"
@@ -15,9 +17,12 @@ tensorflow = {version = "*",platform_system = "== 'Darwin'"}
 tensorflow-gpu = {version = "*",platform_system = "== 'Linux'"}
 keras = "*"
 kaggle = "*"
+pandas = "*"
+scikit-learn = "*"
+phonenumbers = "*"
 
 [requires]
 python_version = "3.7"
 
 [scripts]
-download = "bash download.sh"
+sync = "bash sync.sh"
