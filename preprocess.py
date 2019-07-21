@@ -19,7 +19,7 @@ from multiprocessing.managers import BaseManager, NamespaceProxy
 import utils
 import siamese_evaluation
 
-WORD2VEC_FILE = "./resource/GoogleNews-vectors-negative300.bin"
+WORD2VEC_FILE = "./resource/GoogleNews-vectors-negative300.bin.gz"
 PREPROCESS_GENERAL = "./resource/replace.csv"
 PREPROCESS_UNITS = "./resource/units.csv"
 

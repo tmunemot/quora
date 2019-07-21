@@ -38,9 +38,9 @@ def process_evaluation_args(args):
     """
 
     # load dataframes
-    df_train = pd.read_csv(args.train)
-    df_dev = pd.read_csv(args.dev)
-    df_val = pd.read_csv(args.val)
+    df_train = pd.read_csv(args.train, sep='"', low_memory=False)
+    df_dev = pd.read_csv(args.dev, sep='"', low_memory=False)
+    df_val = pd.read_csv(args.val, sep='"', low_memory=False)
 
     # create an output directory
     utils.mkdir_p(args.outdir)

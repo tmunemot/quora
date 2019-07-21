@@ -82,7 +82,7 @@ def add_siamese_architecture_group(parser):
                        default=DEFAULT_ARCH["recurrent_unit"],
                        choices=("lstm", "gru"))
     group.add_argument("--num-units",
-                       help="number of recurrent units",
+                       type=int, help="number of recurrent units",
                        default=DEFAULT_ARCH["num_units"],)
     group.add_argument("--unidirectional",
                        help="use unidirectional recurrent units instead of bidirectional",
@@ -116,7 +116,7 @@ def get_model(weights, siamese_params):
     input_q1 = Input(shape=(max_sequence_length,), dtype="int32")
     input_q2 = Input(shape=(max_sequence_length,), dtype="int32")
     inputs = [input_q1, input_q2]
-
+    
     # untrainable embedding layer
     embedding_layer = Embedding(num_words,
                                 embedding_dim,
@@ -210,8 +210,8 @@ def load_weights(word2vec, tokenizer, max_num_words):
     for word, i in word_index.items():
         if i >= num_words:
             continue
-        if word in word2vec.wv:
-            weights[i] = word2vec.wv[word]
+        if word in word2vec:
+            weights[i] = word2vec[word]
     return weights
 
 
